@@ -12,8 +12,14 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 
+// Models
+ const EvOwner = require('./models/evOwnerModel');
+
 // Routes
 // app.use('/api/users', require('./routes/userRoutes'));
+const evOwnerRoutes = require('./routes/evOwnerRoute');
+
+app.use('/api/evowners', evOwnerRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
