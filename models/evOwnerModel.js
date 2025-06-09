@@ -9,10 +9,7 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-        match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please add a valid email'
-    ]
+        
     },
     password: {
         type: String,
@@ -21,11 +18,11 @@ const evOwnerSchema = new mongoose.Schema({
     },
     contact_number: {
         type: String,
-        required: true,
+        required: false,
     },
     home_address: {
         type: String,
-        required: true
+        required: false
     },
 },
     {timestamps: true});

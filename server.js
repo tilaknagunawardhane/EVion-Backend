@@ -12,8 +12,6 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 
-// Models
- const EvOwner = require('./models/evOwnerModel');
 
 // Routes
 // app.use('/api/users', require('./routes/userRoutes'));

@@ -4,10 +4,11 @@ const asyncHandler = require('express-async-handler');
 
 
 const registerEvOwner = asyncHandler(async (req, res) => {
-    const { name, email, password, contact_number, home_address } = req.body;
+    const { name, email, password } = req.body;
+    console.log(req.body);
 
     // Check if all fields are provided
-    if (!name || !email || !password || !contact_number || !home_address) {
+    if (!name || !email || !password) {
         res.status(400);
         throw new Error('Please fill in all fields');
     }
@@ -28,17 +29,16 @@ const registerEvOwner = asyncHandler(async (req, res) => {
         name,
         email,
         password: hashedPassword,
-        contact_number,
-        home_address
+
     });
 
     if (evOwner) {
         res.status(201).json({
-            _id: evOwner._id,
-            name: evOwner.name,
-            email: evOwner.email,
-            contact_number: evOwner.contact_number,
-            home_address: evOwner.home_address
+            user: {
+                _id: evOwner._id,
+                name: evOwner.name,
+                email: evOwner.email,
+            }
         });
     } else {
         res.status(400);
