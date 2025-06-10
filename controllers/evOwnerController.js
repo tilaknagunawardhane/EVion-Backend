@@ -66,8 +66,8 @@ const loginEvOwner = asyncHandler(async (req, res) => {
             home_address: evOwner.home_address
         });
     } else {
-        res.status(400);
-        throw new Error('Invalid credentials');
+        console.log('Invalid Credentials');
+        res.status(400).json({ message: 'Invalid credentials' });
     }
 });
 
