@@ -70,7 +70,7 @@ const loginEvOwner = asyncHandler(async (req, res) => {
     }
 });
 
-const generateOTP = () => Math.floor(1000 + Math.random()*9000).toString();
+const generateOTP = () => Math.floor(1000 + Math.random() * 9000).toString();
 
 const sendOTP = asyncHandler(async (req, res) => {
     const { email, mobile } = req.body;
@@ -78,7 +78,7 @@ const sendOTP = asyncHandler(async (req, res) => {
     try {
         const user = await EvOwner.findOne({ email });
 
-        if(!user){
+        if (!user) {
             res.status(400).json({ message: 'User not found' });
         }
 
@@ -97,14 +97,46 @@ const sendOTP = asyncHandler(async (req, res) => {
 
         console.log(`Sending OTP ${otp} to ${mobile}`);
     }
-    catch (error){
+    catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
+const verifyOTP = asyncHandler(async (req, res) => {
+    const { email, otp } = req.body;
+
+    try {
+        const user = await EvOwner.findOne({ email });
+        if (!user || !user.otp) {
+            return res.status(404).json({ error: 'No OTP found for this user' });
+        }
+
+        const currentTime = new Date();
+        const otpAge = (currentTime - new Date(user.otp.time)) / 1000;
+
+        if (otpAge > 300) { // 5 minutes
+            return res.status(400).json({ error: 'OTP expired' });
+        }
+
+        if (user.otp.otp !== otp) {
+            return res.status(400).json({ error: 'Invalid OTP' });
+        }
+
+        // Clear OTP after successful verification
+        user.otp = undefined;
+        await user.save();
+
+        res.json({ message: 'OTP verified successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
 
 
 module.exports = {
     registerEvOwner,
     loginEvOwner,
-    sendOTP
+    sendOTP,
+    verifyOTP
 };
