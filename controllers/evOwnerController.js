@@ -2,7 +2,6 @@ const EvOwner = require('../models/evOwnerModel');
 const bcrypt = require('bcryptjs');
 const asyncHandler = require('express-async-handler');
 
-
 const registerEvOwner = asyncHandler(async (req, res) => {
     const { name, email, password } = req.body;
     console.log(req.body);
@@ -71,7 +70,41 @@ const loginEvOwner = asyncHandler(async (req, res) => {
     }
 });
 
+const generateOTP = () => Math.floor(1000 + Math.random()*9000).toString();
+
+const sendOTP = asyncHandler(async (req, res) => {
+    const { email, mobile } = req.body;
+
+    try {
+        const user = await EvOwner.findOne({ email });
+
+        if(!user){
+            res.status(400).json({ message: 'User not found' });
+        }
+
+        const otp = generateOTP();
+        const otpTime = new Date();
+
+        console.log('OTP is' + otp);
+
+        user.otp = {
+            mobile,
+            otp,
+            time: otpTime,
+        };
+
+        await user.save();
+
+        console.log(`Sending OTP ${otp} to ${mobile}`);
+    }
+    catch (error){
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 module.exports = {
     registerEvOwner,
-    loginEvOwner
+    loginEvOwner,
+    sendOTP
 };
