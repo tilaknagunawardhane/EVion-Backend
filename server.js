@@ -16,8 +16,10 @@ app.use(express.json());
 // Routes
 // app.use('/api/users', require('./routes/userRoutes'));
 const evOwnerRoutes = require('./routes/evOwnerRoute');
+const bookingRoutes = require('./routes/bookingRoute');
 
 app.use('/api/evowners', evOwnerRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
