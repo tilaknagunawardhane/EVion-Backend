@@ -8,15 +8,17 @@ const registerEvOwner = asyncHandler(async (req, res) => {
 
     // Check if all fields are provided
     if (!name || !email || !password) {
-        res.status(400);
-        throw new Error('Please fill in all fields');
+        // res.status(400);
+        // throw new Error('Please fill in all fields');
+        return res.status(400).json({ message: 'Please fill in all fields' });
+
     }
 
     // Check if user already exists
     const existingUser = await EvOwner.findOne({ email });
     if (existingUser) {
-        res.status(400);
-        throw new Error('User already exists');
+        return res.status(400).json({ message: 'User already exists' });
+
     }
 
     // Hash the password
@@ -40,8 +42,10 @@ const registerEvOwner = asyncHandler(async (req, res) => {
             }
         });
     } else {
-        res.status(400);
-        throw new Error('Invalid user data');
+        // res.status(400);
+        // throw new Error('Invalid user data');
+        return res.status(400).json({ message: 'Invalid user data' });
+
     }
 });
 
@@ -50,8 +54,10 @@ const loginEvOwner = asyncHandler(async (req, res) => {
 
     // Check if all fields are provided
     if (!email || !password) {
-        res.status(400);
-        throw new Error('Please fill in all fields');
+        // res.status(400);
+        // throw new Error('Please fill in all fields');
+        return res.status(400).json({ message: 'Please fill in all fields' });
+
     }
 
     // Find user by email
@@ -98,7 +104,8 @@ const sendOTP = asyncHandler(async (req, res) => {
         console.log(`Sending OTP ${otp} to ${mobile}`);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        
+        res.status(400).json({ error: error.message });
     }
 });
 
