@@ -1,5 +1,20 @@
 const mongoose = require('mongoose');
 
+const otpSchema = new mongoose.Schema({
+    mobile: {
+        type: String,
+        required: true,
+    },
+    otp: {
+        type: String,
+        required: false,
+    },
+    time: {
+        type: Date,
+        default: Date.now,
+    }
+}, {_id: false});
+
 const evOwnerSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -9,7 +24,7 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-        
+
     },
     password: {
         type: String,
@@ -24,8 +39,9 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: false
     },
+    otp: otpSchema,
 },
-    {timestamps: true});
+    { timestamps: true });
 
 const EvOwner = mongoose.model('EvOwner', evOwnerSchema);
 module.exports = EvOwner;
