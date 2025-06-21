@@ -150,10 +150,34 @@ const verifyOTP = asyncHandler(async (req, res) => {
     }
 })
 
+const resetPassword = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password required' });
+  }
+
+  const user = await EvOwner.findOne({ email });
+
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+
+  
+  // Hash the new password
+  const salt = await bcrypt.genSalt(10);
+  user.password = await bcrypt.hash(password, salt);
+
+  await user.save();
+
+  return res.status(200).json({ message: 'Password updated successfully' });
+});
+
 
 module.exports = {
     registerEvOwner,
     loginEvOwner,
     sendOTP,
-    verifyOTP
+    verifyOTP,
+    resetPassword
 };
