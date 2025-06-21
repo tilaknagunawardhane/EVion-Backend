@@ -1,6 +1,7 @@
 const EvOwner = require('../models/evOwnerModel');
 const bcrypt = require('bcryptjs');
 const asyncHandler = require('express-async-handler');
+const sendSMS = require('../utils/sendSMS');
 
 const registerEvOwner = asyncHandler(async (req, res) => {
     const { name, email, password } = req.body;
@@ -76,7 +77,7 @@ const loginEvOwner = asyncHandler(async (req, res) => {
     }
 });
 
-const generateOTP = () => Math.floor(1000 + Math.random() * 9000).toString();
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 const sendOTP = asyncHandler(async (req, res) => {
     const { email, mobile } = req.body;
@@ -91,7 +92,7 @@ const sendOTP = asyncHandler(async (req, res) => {
         const otp = generateOTP();
         const otpTime = new Date();
 
-        console.log('OTP is' + otp);
+        console.log('OTP is ' + otp);
 
         user.otp = {
             mobile,
@@ -101,11 +102,20 @@ const sendOTP = asyncHandler(async (req, res) => {
 
         await user.save();
 
+        // const internationalPhone = '+94' + mobile.slice(1); // Convert 0771234567 -> +94771234567
+        // console.log(internationalPhone);
+        // const message = `Your OTP is: ${otp}`;
+        // await sendSMS(internationalPhone, message);
+
         console.log(`Sending OTP ${otp} to ${mobile}`);
+        return res.status(200).json({ message: 'OTP sent successfully' });
+
+        
     }
     catch (error) {
-        
-        res.status(400).json({ error: error.message });
+
+        console.error('Error in sendOTP:', error);
+        return res.status(500).json({ error: error.message });
     }
 });
 
