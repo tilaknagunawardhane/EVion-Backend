@@ -33,7 +33,7 @@ const addBooking = asyncHandler(async (req, res) => {
         console.log('Invalid Date!!');
     }
 
-    const existingBooking = await Booking.findOne({ booking_date_time: {$lt: booking_date_time}})
+    // const existingBooking = await Booking.findOne({ booking_date_time: {$lt: booking_date_time}})
 
     const booking = await Booking.create({
         booking_date_time,
@@ -62,6 +62,40 @@ const addBooking = asyncHandler(async (req, res) => {
     }
 });
 
+
+const getBookedSlots = asyncHandler(async (req,res) => {
+    let {date} = req.body;
+    console.log(date);
+    date = dayjs.utc(date);
+    console.log(date.format());
+    
+    if (!date){
+        res.status(400);
+        throw new Error('No date');
+    }
+
+    const bookedSlots = await Booking.find({ booking_date: date })
+
+    if(bookedSlots.length >= 0 ){
+        res.status(200).json(
+            bookedSlots.map(booking => ({
+            
+            _id: booking._id,
+            booking_date: booking.booking_date,
+            start_time: booking.start_time,
+            end_time: booking.end_time,
+            no_of_slots: booking.no_of_slots
+            }))
+        );
+    }else{
+        res.status(400);
+        throw new Error('Invalid');
+    }
+
+    console.log(bookedSlots);
+});
+
 module.exports = {
-    addBooking
+    addBooking,
+    getBookedSlots
 };
