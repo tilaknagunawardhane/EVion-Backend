@@ -28,7 +28,8 @@
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
     "mongoose": "^8.15.1",
-    "react-dayjs": "^0.3.2"
+    "react-dayjs": "^0.3.2",
+    "twilio": "^5.7.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
