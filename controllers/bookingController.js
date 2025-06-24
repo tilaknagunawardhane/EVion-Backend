@@ -17,17 +17,17 @@ const addBooking = asyncHandler(async (req, res) => {
     }
     
     booking_date_time = dayjs(booking_date_time).utc(); //with utc(), string/date -> date in Z   
-    console.log(booking_date_time.format());
+    console.log('booking_date_time: ',booking_date_time.format());
 
     if (booking_date_time.isValid()){
 
         booking_date = booking_date_time.startOf('day'); //date & time UTC -> date with midnight UTC
-        start_time = booking_date_time.format('HH:mm:ss'); //in UTC as a string
-        end_time = booking_date_time.add(slot_size*no_of_slots, 'minute').format('HH:mm:ss'); //in UTC as a string
+        start_time = booking_date_time; //in UTC 
+        end_time = booking_date_time.add(slot_size*no_of_slots, 'minute'); //in UTC
         
-        // console.log(booking_date.format());
-        // console.log(start_time);
-        // console.log(end_time);
+        console.log('booking_date: ',booking_date.format());
+        console.log('start_time: ',start_time.format());
+        console.log('end_time: ',end_time.format());
     }
     else{
         console.log('Invalid Date!!');
@@ -36,7 +36,6 @@ const addBooking = asyncHandler(async (req, res) => {
     // const existingBooking = await Booking.findOne({ booking_date_time: {$lt: booking_date_time}})
 
     const booking = await Booking.create({
-        booking_date_time,
         booking_date,
         start_time,
         end_time,
@@ -64,10 +63,11 @@ const addBooking = asyncHandler(async (req, res) => {
 
 
 const getBookedSlots = asyncHandler(async (req,res) => {
+    console.log('req.body: ', req.body);
+
     let {date} = req.body;
-    console.log(date);
     date = dayjs.utc(date);
-    console.log(date.format());
+    console.log('date: ', date.format());
     
     if (!date){
         res.status(400);
@@ -82,14 +82,13 @@ const getBookedSlots = asyncHandler(async (req,res) => {
             
                 if(booking.no_of_slots > 1){
                     const wholeSlotStartTime = booking.start_time;
-                    const wholeSlotEndTime = booking.end_time;
                     
                     for (let i=0; i<booking.no_of_slots; i++){                
                         slotsSeperately.push({
                             _id: booking._id,
                             booking_date: booking.booking_date,
-                            start_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*i, 'minute').format("HH:mm:ss"),
-                            end_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
+                            start_time: dayjs(wholeSlotStartTime).add(slot_size*i, 'minute').format("HH:mm:ss"),
+                            end_time: dayjs(wholeSlotStartTime).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
                         })
                     }
 
@@ -97,8 +96,8 @@ const getBookedSlots = asyncHandler(async (req,res) => {
                     slotsSeperately.push({
                         _id: booking._id,
                         booking_date: booking.booking_date,
-                        start_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*i, 'minute').format("HH:mm:ss"),
-                        end_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
+                        start_time: dayjs(wholeSlotStartTime).add(slot_size*i, 'minute').format("HH:mm:ss"),
+                        end_time: dayjs(wholeSlotStartTime).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
                     })
                 }
             })

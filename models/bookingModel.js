@@ -21,21 +21,17 @@ const bookingSchema = new mongoose.Schema({
         ref: 'Plugs',
         required: false
     },
-    booking_date_time: {
-        type: Date,
-        required: true
-    },
     booking_date: {
         type: Date, // Date only, 2000-05-16T00:00:00Z (midnight)
         required: true,
         index: true 
     },
     start_time: {
-        type: String, // Time only
+        type: Date,
         required: true
     },
     end_time: {
-        type: String, // Time only
+        type: Date, 
         required: true
     },
     no_of_slots: {
