@@ -75,24 +75,39 @@ const getBookedSlots = asyncHandler(async (req,res) => {
     }
 
     const bookedSlots = await Booking.find({ booking_date: date })
+    const slotsSeperately = [];
 
     if(bookedSlots.length >= 0 ){
-        res.status(200).json(
-            bookedSlots.map(booking => ({
+            bookedSlots.map(booking => {
             
-            _id: booking._id,
-            booking_date: booking.booking_date,
-            start_time: booking.start_time,
-            end_time: booking.end_time,
-            no_of_slots: booking.no_of_slots
-            }))
-        );
+                if(booking.no_of_slots > 1){
+                    const wholeSlotStartTime = booking.start_time;
+                    const wholeSlotEndTime = booking.end_time;
+                    
+                    for (let i=0; i<booking.no_of_slots; i++){                
+                        slotsSeperately.push({
+                            _id: booking._id,
+                            booking_date: booking.booking_date,
+                            start_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*i, 'minute').format("HH:mm:ss"),
+                            end_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
+                        })
+                    }
+
+                }else{
+                    slotsSeperately.push({
+                        _id: booking._id,
+                        booking_date: booking.booking_date,
+                        start_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*i, 'minute').format("HH:mm:ss"),
+                        end_time: dayjs(`2000-01-01T${wholeSlotStartTime}`).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
+                    })
+                }
+            })
     }else{
         res.status(400);
         throw new Error('Invalid');
     }
-
-    console.log(bookedSlots);
+    res.status(200).json(slotsSeperately);
+    // console.log(slotsSeperately);
 });
 
 module.exports = {
