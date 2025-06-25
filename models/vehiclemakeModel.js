@@ -1,6 +1,6 @@
-const monogoose = require('mongoose');
+const mongoose = require('mongoose');
 
-const vehiclemakeSchema = new monogoose.Schema({
+const vehiclemakeSchema = new mongoose.Schema({
     make: {
         type: String,
         required: true
