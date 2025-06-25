@@ -46,7 +46,8 @@ const addBooking = asyncHandler(async (req, res) => {
         end_time,
         no_of_slots,
         charger_id,
-        plug_type
+        plug_type,
+        status: 'upcoming'
     });
 
     if (booking){
@@ -58,7 +59,8 @@ const addBooking = asyncHandler(async (req, res) => {
             end_time: booking.end_time,
             no_of_slots: booking.no_of_slots,
             charger_id: booking.charger_id,
-            plug_type: booking.plug_type
+            plug_type: booking.plug_type,
+            status: booking.status
         });
     }else {
         res.status(400);
@@ -130,7 +132,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
 
     const upcomingBookings = await Booking.find({ 
         ev_user_id,
-        upcoming: 1 })
+        status: 'upcoming' })
     .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots'  );
 
     console.log('upcomingBookings: ', upcomingBookings);
@@ -143,8 +145,38 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
     
 });
 
+const getUserCompletedBookings = asyncHandler(async (req, res) => {
+    console.log('req: ', req.body);
+    let {ev_user_id} = req.body;
+
+    if(!ev_user_id){
+       return res.status(400).json({ message: 'No EV user ID' });
+    }
+    
+    if(!mongoose.Types.ObjectId.isValid(ev_user_id)){
+        return res.status(400).json({ message: 'Invalid EV user ID' });
+    }
+    ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
+
+    console.log('ev_user_id: ', ev_user_id);
+
+    const completedBookings = await Booking.find({ 
+        ev_user_id,
+        status: 'completed' })
+    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots'  );
+
+    console.log('completed Bookings: ', completedBookings);
+
+    if(completedBookings.length > 0){
+        return res.status(200).json(completedBookings);
+    }else{
+        return res.json({ message: 'No completed Bookings' });
+    }
+})
+
 module.exports = {
     addBooking,
     getBookedSlots,
-    getUserUpcomingBookings
+    getUserUpcomingBookings,
+    getUserCompletedBookings
 };

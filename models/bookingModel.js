@@ -8,18 +8,18 @@ const bookingSchema = new mongoose.Schema({
     },
     vehicle_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Vehicles',
-        required: false
+        ref: 'vehicles',
+        required: true
     },
     charger_id: {
         type: Number, //change this to object id type
         ref: 'Chargers',
-        required: false
+        required: true
     },
     plug_type: {
         type: Number,
         ref: 'Plugs',
-        required: false
+        required: true
     },
     booking_date: {
         type: Date, // Date only, 2000-05-16T00:00:00Z (midnight)
@@ -42,21 +42,13 @@ const bookingSchema = new mongoose.Schema({
             message: '{VALUE} is not a integer'
         }
     },
+    status: {
+        type: String,
+        enum: ['upcoming', 'completed', 'cancelled', 'no_show'],
+        required: true
+    },
     arrival_time: {
         type: Date,
-        required: false
-    },
-
-    upcoming: {
-        type: Number,
-        enum: [0,1],
-        required: false,
-        default: 1
-    },
-
-    cancelled: {
-        type: Number,
-        enum: [0,1],
         required: false
     },
     cancelled_at: {
