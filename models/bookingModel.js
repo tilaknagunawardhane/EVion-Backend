@@ -3,8 +3,8 @@ const mongoose = require('mongoose');
 const bookingSchema = new mongoose.Schema({
     ev_user_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Users',
-        required: false
+        ref: 'evowners',
+        required: true
     },
     vehicle_id: {
         type: mongoose.Schema.Types.ObjectId,
@@ -46,6 +46,14 @@ const bookingSchema = new mongoose.Schema({
         type: Date,
         required: false
     },
+
+    upcoming: {
+        type: Number,
+        enum: [0,1],
+        required: false,
+        default: 1
+    },
+
     cancelled: {
         type: Number,
         enum: [0,1],
