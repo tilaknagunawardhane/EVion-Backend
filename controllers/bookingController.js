@@ -2,13 +2,16 @@ const Booking = require('../models/bookingModel');
 const asyncHandler = require('express-async-handler');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
+require('dotenv').config();
+const mongoose = require('mongoose');
+
 const slot_size = process.env.SLOT_SIZE;
 
 // Extend dayjs with UTC plugin
 dayjs.extend(utc);
 
 const addBooking = asyncHandler(async (req, res) => {
-    let {booking_date_time, no_of_slots, charger_id, plug_type} = req.body;
+    let {ev_user_id, vehicle_id, booking_date_time, no_of_slots, charger_id, plug_type} = req.body;
     console.log(req.body);
 
     if(!booking_date_time || !no_of_slots || !charger_id || !plug_type){
@@ -36,6 +39,8 @@ const addBooking = asyncHandler(async (req, res) => {
     // const existingBooking = await Booking.findOne({ booking_date_time: {$lt: booking_date_time}})
 
     const booking = await Booking.create({
+        ev_user_id,
+        vehicle_id,
         booking_date,
         start_time,
         end_time,
@@ -102,14 +107,44 @@ const getBookedSlots = asyncHandler(async (req,res) => {
                 }
             })
     }else{
-        res.status(400);
-        throw new Error('Invalid');
+        return res.status(400).json({ message: 'Invalid' });
     }
     res.status(200).json(slotsSeperately);
     // console.log(slotsSeperately);
 });
 
+const getUserUpcomingBookings = asyncHandler(async (req,res) => {
+    console.log('req: ', req.body);
+    let {ev_user_id} = req.body;
+
+    if(!ev_user_id){
+       return res.status(400).json({ message: 'No EV user ID' });
+    }
+    
+    if(!mongoose.Types.ObjectId.isValid(ev_user_id)){
+        return res.status(400).json({ message: 'Invalid EV user ID' });
+    }
+    ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
+
+    console.log('ev_user_id: ', ev_user_id);
+
+    const upcomingBookings = await Booking.find({ 
+        ev_user_id,
+        upcoming: 1 })
+    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots'  );
+
+    console.log('upcomingBookings: ', upcomingBookings);
+
+    if(upcomingBookings.length > 0){
+        return res.status(200).json(upcomingBookings);
+    }else{
+        return res.json({ message: 'No upcoming Bookings' });
+    }
+    
+});
+
 module.exports = {
     addBooking,
-    getBookedSlots
+    getBookedSlots,
+    getUserUpcomingBookings
 };
