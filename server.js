@@ -11,13 +11,24 @@ connectDB();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 
 
 // Routes
 // app.use('/api/users', require('./routes/userRoutes'));
 const evOwnerRoutes = require('./routes/evOwnerRoute');
+const authRoutes = require('./routes/authRoute');
+
+// const adminRoutes = require('./routes/adminRoutes');
+// const evOwnerRoutes = require('./routes/evOwnerRoutes');
+// const stationOwnerRoutes = require('./routes/stationOwnerRoutes');
 
 app.use('/api/evowners', evOwnerRoutes);
+
+app.use('/api/auth', authRoutes);
+// app.use('/api/admin', adminRoutes);
+// app.use('/api/ev-owner', evOwnerRoutes);
+// app.use('/api/station-owner', stationOwnerRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
