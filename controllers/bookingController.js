@@ -5,7 +5,7 @@ const utc = require('dayjs/plugin/utc');
 const duration = require('dayjs/plugin/duration');
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { getVehicleById, getMakeName, getModelName } = require('../utils/helpers');
+const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation } = require('../utils/helpers');
 
 const slot_size = process.env.SLOT_SIZE;
 
@@ -143,7 +143,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
     let upcomingBookings = await Booking.find({ 
         ev_user_id,
         status: 'upcoming' })
-    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots'  );
+    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id'  );
 
     // console.log('upcomingBookings: ', upcomingBookings);
 
@@ -156,6 +156,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
         duration: formatDuration(booking.no_of_slots * slot_size),
         time: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+        charging_station_id: booking.charging_station_id,
         // charger_id: booking.charger_id,
         // plugType: booking.plug_type,
         // startTime: booking.start_time,
@@ -163,7 +164,29 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         // slotCount: booking.no_of_slots,
     }));
 
-    console.log('upcomingBookings: ', upcomingBookings);
+    upcomingBookings = await Promise.all(
+        upcomingBookings.map(async (booking) => {
+            try{
+                const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
+                const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
+
+                return{
+                    ...booking,
+                    stationName: chargingStation.station_name,
+                    address: chargingStation.address,
+                };
+            }catch (error){
+                return {
+                    ...booking,
+                    stationName: null,
+                    address: null,
+                    chargingStation_error: error.message
+                }
+            }
+        })
+    );
+
+    // console.log('upcomingBookings: ', upcomingBookings);
 
     const bookingsWithVehicle = await Promise.all(
         upcomingBookings.map(async (booking) => {
@@ -192,6 +215,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         })
     );
 
+    console.log('bookingsWithVehicle: ', bookingsWithVehicle);
     return res.status(200).json(bookingsWithVehicle);
     
 });

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Vehicle = require('../models/vehicleModel');
 const VehicleModel = require('../models/vehiclemodelModel');
 const VehicleMake = require('../models/vehiclemakeModel');
+const PartneredChargingStation = require('../models/partneredChargingStationModel');
 
 const getVehicleById = async (vehicle_id) => {
     if (!vehicle_id) {
@@ -51,8 +52,25 @@ const getMakeName = async (make_id)  => {
     return make;
 };
 
+const getPartneredChargingStation = async (charging_station_id) => {
+    if(!charging_station_id){
+        throw new Error('Charging station ID is required');
+    }
+
+    if(!mongoose.Types.ObjectId.isValid(charging_station_id)){
+        throw new Error('Invalid charging station ID');
+    }
+
+    const partnered_charging_station = await PartneredChargingStation.findById(charging_station_id);
+    if(!partnered_charging_station){
+        throw new Error('No such charging staion');
+    }
+    return partnered_charging_station;
+};
+
 module.exports = {
     getVehicleById,
     getModelName,
     getMakeName,
+    getPartneredChargingStation,
 };
