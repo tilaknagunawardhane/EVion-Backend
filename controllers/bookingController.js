@@ -5,7 +5,7 @@ const utc = require('dayjs/plugin/utc');
 const duration = require('dayjs/plugin/duration');
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation } = require('../utils/helpers');
+const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation, getConnectorById } = require('../utils/helpers');
 
 const slot_size = process.env.SLOT_SIZE;
 
@@ -143,7 +143,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
     let upcomingBookings = await Booking.find({ 
         ev_user_id,
         status: 'upcoming' })
-    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id'  );
+    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id connector_type_id'  );
 
     // console.log('upcomingBookings: ', upcomingBookings);
 
@@ -155,10 +155,11 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         vehicle_id: booking.vehicle_id,
         dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
         duration: formatDuration(booking.no_of_slots * slot_size),
-        time: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+        startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+        endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         charging_station_id: booking.charging_station_id,
+        connector_type_id: booking.connector_type_id,
         // charger_id: booking.charger_id,
-        // plugType: booking.plug_type,
         // startTime: booking.start_time,
         // endTime: booking.end_time,
         // slotCount: booking.no_of_slots,
@@ -170,16 +171,21 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
                 const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
                 const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
 
+                const connectorTypeDoc = await getConnectorById(booking.connector_type_id);
+                const connectorType = connectorTypeDoc?.toObject?.() || connectorTypeDoc;
+
                 return{
                     ...booking,
                     stationName: chargingStation.station_name,
                     address: chargingStation.address,
+                    connectorType: connectorType.type_name,
                 };
             }catch (error){
                 return {
                     ...booking,
                     stationName: null,
                     address: null,
+                    connectorType: null,
                     chargingStation_error: error.message
                 }
             }
