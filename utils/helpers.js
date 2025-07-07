@@ -3,6 +3,7 @@ const Vehicle = require('../models/vehicleModel');
 const VehicleModel = require('../models/vehiclemodelModel');
 const VehicleMake = require('../models/vehiclemakeModel');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
+const Connector = require('../models/connectorModel');
 
 const getVehicleById = async (vehicle_id) => {
     if (!vehicle_id) {
@@ -68,9 +69,26 @@ const getPartneredChargingStation = async (charging_station_id) => {
     return partnered_charging_station;
 };
 
+const getConnectorById = async (connector_id) => {
+    if(!connector_id){
+        throw new Error('Connector ID is required');
+    }
+
+    if(!mongoose.Types.ObjectId.isValid(connector_id)){
+        throw new Error('Invalid connector ID');
+    }
+
+    const connector = await Connector.findById(connector_id);
+    if(!connector){
+        throw new Error('No such connection');
+    }
+    return connector;
+};
+
 module.exports = {
     getVehicleById,
     getModelName,
     getMakeName,
     getPartneredChargingStation,
+    getConnectorById,
 };
