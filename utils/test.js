@@ -1,10 +1,11 @@
 const estimateBatteryConsumption = require('./batteryEstimator');
 
 const result = estimateBatteryConsumption(
-    'Tesla Model 3',
-    90,
-    150,
-    75
+    vehicleName = 'Tesla Model 3',
+    initialBatteryLevelPercent = 90,
+    distanceKm = 150,
+    passengerCount = 3,
+    additionalWeightKg = 100
 )
 
 console.log('Battery Consumption Estimate: ', result);
