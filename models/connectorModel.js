@@ -1,4 +1,3 @@
-const { urlencoded } = require('express');
 const mongoose = require('mongoose');
 
 const connectorSchema = new mongoose.Schema({
@@ -11,7 +10,7 @@ const connectorSchema = new mongoose.Schema({
         required: true
     },
     image: {
-        type: URL,
+        type: String,
         required: false
     }
 },

@@ -59,6 +59,10 @@ const bookingSchema = new mongoose.Schema({
     cancelled_at: {
         type: Date,
         required: false
+    },
+    cost: {
+        type: Number,
+        required: false
     }
 },
     {timestamps: true});
