@@ -21,9 +21,9 @@ const bookingSchema = new mongoose.Schema({
         ref: 'Chargers',
         required: true
     },
-    plug_type: {
-        type: Number,
-        ref: 'Plugs',
+    connector_type_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'connectors',
         required: true
     },
     booking_date: {
@@ -58,6 +58,10 @@ const bookingSchema = new mongoose.Schema({
     },
     cancelled_at: {
         type: Date,
+        required: false
+    },
+    cost: {
+        type: Number,
         required: false
     }
 },
