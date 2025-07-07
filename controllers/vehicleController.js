@@ -1,0 +1,36 @@
+const VehicleMake = require('../models/vehiclemakeModel');
+const VehicleModel = require('../models/vehiclemodelModel');
+const VehicleColor = require('../models/vehicleColorModel');
+const asyncHandler = require('express-async-handler');
+
+const getDropdownData = asyncHandler(async (req, res) => {
+
+    try {
+        const vehicleMakes = await VehicleMake.find();
+        const vehicleModels = await VehicleModel.find();
+        const vehicleColors = await VehicleColor.find();
+
+        // console.log(vehicleColors, vehicleMakes, vehicleModels);
+        return res.status(200).json({
+            success: true,
+            data: {
+                vehicleMakes,
+                vehicleModels,
+                vehicleColors
+            }
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch dropdown data',
+            error: error.message
+        });
+    }
+    
+
+});
+
+module.exports = {
+    getDropdownData
+};
