@@ -240,7 +240,7 @@ const getUserCompletedBookings = asyncHandler(async (req, res) => {
     let completedBookings = await Booking.find({ 
         ev_user_id,
         status: 'completed' })
-    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id connector_type_id');
+    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id connector_type_id cost');
 
     console.log('completed Bookings: ', completedBookings);
 
@@ -256,6 +256,7 @@ const getUserCompletedBookings = asyncHandler(async (req, res) => {
         endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         charging_station_id: booking.charging_station_id,
         connector_type_id: booking.connector_type_id,
+        cost: booking.cost,
     }));
 
     completedBookings = await Promise.all(
