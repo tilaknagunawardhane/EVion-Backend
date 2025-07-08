@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const {getDropdownData, getConnectorTypes} = require('../controllers/vehicleController');
+const {getDropdownData, getConnectorTypes, uploadVehicleImage, addVehicle} = require('../controllers/vehicleController');
 
 router.get('/dropdowndata', getDropdownData);
-router.get('/connectors', getConnectorTypes)
+router.get('/connectors', getConnectorTypes);
+router.post('/addVehicle', uploadVehicleImage, addVehicle);
 
 module.exports = router;
