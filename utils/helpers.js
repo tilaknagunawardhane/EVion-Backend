@@ -4,6 +4,7 @@ const VehicleModel = require('../models/vehiclemodelModel');
 const VehicleMake = require('../models/vehiclemakeModel');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
 const Connector = require('../models/connectorModel');
+const EvOwner = require('../models/evOwnerModel');
 
 const getVehicleById = async (vehicle_id) => {
     if (!vehicle_id) {
@@ -20,6 +21,25 @@ const getVehicleById = async (vehicle_id) => {
     }
     return vehicle;
 };
+
+const getVehiclesByOwner = async (owner_id) => {
+    if(!owner_id){
+        throw new Error('Owner ID is required');
+    }
+    if(!mongoose.Types.ObjectId.isValid(owner_id)){
+        throw new Error('Invalid owner ID');
+    }
+    const ownedVehicles = await EvOwner.findById(owner_id).select('vehicles');
+
+    if(!ownedVehicles){
+        throw new Error('No owner');
+    }
+    if(!ownedVehicles || ownedVehicles.length === 0){
+        throw new Error('No owned vehicles');
+    }
+
+    return ownedVehicles;
+}
 
 const getModelName = async (model_id) => {
     if(!model_id){
@@ -91,4 +111,5 @@ module.exports = {
     getMakeName,
     getPartneredChargingStation,
     getConnectorById,
+    getVehiclesByOwner,
 };
