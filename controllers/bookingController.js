@@ -5,7 +5,7 @@ const utc = require('dayjs/plugin/utc');
 const duration = require('dayjs/plugin/duration');
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation, getConnectorById } = require('../utils/helpers');
+const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation, getConnectorById, getVehiclesByOwner } = require('../utils/helpers');
 
 const slot_size = process.env.SLOT_SIZE;
 
@@ -318,11 +318,46 @@ const getUserCompletedBookings = asyncHandler(async (req, res) => {
      console.log('bookingsWithVehicle: ', bookingsWithVehicle);
     return res.status(200).json(bookingsWithVehicle);
 
-})
+});
+
+const getOwnedVehicles = asyncHandler(async (req, res) => {
+    console.log('req: ', req.query);
+    let {ev_user_id} = req.query;
+
+    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+        return res.status(400).json({ message: 'Invalid EV user ID' });
+    }
+    ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
+
+    console.log('ev_user_id: ', ev_user_id);
+
+    const ownedVehiclesDoc = await getVehiclesByOwner(ev_user_id);
+    let ownedVehicles = ownedVehiclesDoc?.toObject?.() || ownedVehiclesDoc;
+
+    console.log('owned vehicles: ', ownedVehicles);
+
+    ownedVehicles = ownedVehicles.vehicles.map(vehicle => ({
+        id: vehicle._id,
+        year: vehicle.manufactured_year,
+        battery: vehicle.battery_capacity,
+        max_power_DC: vehicle.max_power_DC,
+        max_power_AC: vehicle.max_power_AC,
+        image: vehicle.image,
+        ports: [
+            vehicle.connector_type_AC,
+            vehicle.connector_type_DC
+        ]
+
+    }))
+
+    console.log('owned vehicles: ', ownedVehicles);
+    return res.status(200).json(ownedVehicles);
+});
 
 module.exports = {
     addBooking,
     getBookedSlots,
     getUserUpcomingBookings,
-    getUserCompletedBookings
+    getUserCompletedBookings,
+    getOwnedVehicles,
 };
