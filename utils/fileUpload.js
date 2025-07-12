@@ -28,11 +28,12 @@ const createUploader = (options = {}) => {
     useOriginalName = false
   } = options;
 
-  const uploadPath = path.join(__dirname, '../../public', destination);
+  const uploadPath = path.join(process.cwd(), 'public', destination);
   ensureDirectoryExists(uploadPath);
 
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
+      console.log(`Saving to: ${uploadPath}`);
       cb(null, uploadPath);
     },
     filename: (req, file, cb) => {
