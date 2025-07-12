@@ -42,7 +42,7 @@ const addVehicle = asyncHandler(async (req, res) => {
         if (!ownerId) {
             return res.status(400).json({ message: 'Owner id required' });
         }
-        if (!vehicleMakeId || !vehicleModelId || !manufactureYear || !batteryCapacity || 
+        if (!vehicleMakeId || !vehicleModelId || !manufactureYear || !batteryCapacity ||
             !chargingPowerAC || !chargingPowerDC || !connector_type_AC) {
             return res.status(400).json({ message: 'Please fill in all required fields' });
         }
@@ -90,7 +90,7 @@ const addVehicle = asyncHandler(async (req, res) => {
         }
         // console.log("Response ", response);
 
-       res.status(201).json(response);
+        res.status(201).json(response);
 
     } catch (error) {
         console.error('Error in addVehicle:', error);
@@ -152,12 +152,65 @@ const getConnectorTypes = asyncHandler(async (req, res) => {
             error: error.message
         });
     }
-})
+});
+
+const fetchVehicles = asyncHandler(async (req, res) => {
+    try {
+        const { userID } = req.body;
+        // console.log(req.body);
+
+        const user = await EvOwner.findById(userID);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        const formattedVehicles = user.vehicles
+            .filter(vehicle => vehicle !== null)
+            .map(vehicle => {
+                // Format vehicle data
+                const vehicleData = {
+                    ...vehicle.toObject(),
+                    // Add full image URLs
+                    image: vehicle.image ? `/uploads/vehicles/${vehicle.image}` : null,
+                    connectorImages: {
+                        AC: vehicle.connector_type_AC_info?.image 
+                            ? `/uploads/${vehicle.connector_type_AC_info.image}`
+                            : null,
+                        DC: vehicle.connector_type_DC_info?.image 
+                            ? `/uploads/${vehicle.connector_type_DC_info.image}`
+                            : null
+                    },
+                    
+                };
+
+                return vehicleData;
+            });
+
+        res.status(200).json({
+            success: true,
+            count: formattedVehicles.length,
+            data: formattedVehicles
+        });
+
+    }
+    catch (error) {
+        console.error('Error fetching vehicles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching vehicles',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
 
 
 module.exports = {
     getDropdownData,
     getConnectorTypes,
     addVehicle,
-    uploadVehicleImage
+    uploadVehicleImage,
+    fetchVehicles
 };
