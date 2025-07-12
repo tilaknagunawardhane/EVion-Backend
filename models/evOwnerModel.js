@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const populateRefFields = require('../utils/populateRefFields');
 
 const otpSchema = new mongoose.Schema({
     mobile: {
@@ -21,10 +22,18 @@ const vehicleSchema = new mongoose.Schema({
         ref: 'vehiclemake',
         required: true
     },
+    make_info: {  // Embedded field for make
+        type: Object,
+        default: null
+    },
     model: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'vehiclemodel',
         required: true
+    },
+    model_info: {  // Embedded field for model
+        type: Object,
+        default: null
     },
     manufactured_year: {
         type: Number,
@@ -38,6 +47,10 @@ const vehicleSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'vehiclecolor',
         required: false
+    },
+    color_info: {  // Embedded field for color
+        type: Object,
+        default: null
     },
     vehicle_type: {
         type: String,
@@ -56,10 +69,18 @@ const vehicleSchema = new mongoose.Schema({
         ref: 'connector',
         required: true
     },
+    connector_type_AC_info: {  // Embedded field for AC connector
+        type: Object,
+        default: null
+    },
     connector_type_DC: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'connector',
         required: true
+    },
+    connector_type_DC_info: {  // Embedded field for DC connector
+        type: Object,
+        default: null
     },
     battery_health: {
         type: Number,
@@ -77,10 +98,46 @@ const vehicleSchema = new mongoose.Schema({
         type: String,
         required: false
     }
-},{
-  _id: true,
-  timestamps: true  // ✅ This enables createdAt and updatedAt
-})
+}, {
+    _id: true,
+    timestamps: true
+});
+
+// Apply populateRefFields to all reference fields in vehicleSchema
+populateRefFields({
+    refField: 'make',
+    embedField: 'make_info',
+    modelName: 'vehiclemake',
+    fields: ['make'] // Specify fields you want to embed
+}).applyTo(vehicleSchema);
+
+populateRefFields({
+    refField: 'model',
+    embedField: 'model_info',
+    modelName: 'vehiclemodel',
+    fields: ['model']
+}).applyTo(vehicleSchema);
+
+populateRefFields({
+    refField: 'color',
+    embedField: 'color_info',
+    modelName: 'vehiclecolor',
+    fields: ['color'] // Example fields
+}).applyTo(vehicleSchema);
+
+populateRefFields({
+    refField: 'connector_type_AC',
+    embedField: 'connector_type_AC_info',
+    modelName: 'connector',
+    fields: ['type_name', 'current_type', 'image']
+}).applyTo(vehicleSchema);
+
+populateRefFields({
+    refField: 'connector_type_DC',
+    embedField: 'connector_type_DC_info',
+    modelName: 'connector',
+    fields: ['type_name', 'current_type', 'image']
+}).applyTo(vehicleSchema);
 
 const evOwnerSchema = new mongoose.Schema({
     name: {
@@ -91,7 +148,6 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
-
     },
     password: {
         type: String,
@@ -108,8 +164,9 @@ const evOwnerSchema = new mongoose.Schema({
     },
     otp: otpSchema,
     vehicles: [vehicleSchema],
-},
-    { timestamps: true });
+}, {
+    timestamps: true
+});
 
 const EvOwner = mongoose.model('EvOwner', evOwnerSchema);
 module.exports = EvOwner;

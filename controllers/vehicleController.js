@@ -54,14 +54,14 @@ const addVehicle = asyncHandler(async (req, res) => {
 
         // Create vehicle data with proper ObjectIds
         const vehicleData = {
-            make: new mongoose.Types.ObjectId(vehicleMakeId),
-            model: new mongoose.Types.ObjectId(vehicleModelId),
-            color: colorId ? new mongoose.Types.ObjectId(colorId) : null,
+            make: vehicleMakeId,
+            model: vehicleModelId,
+            color: colorId ? colorId : null,
             manufactured_year: parseInt(manufactureYear),
             vehicle_type: vehicleType || null,
             battery_capacity: parseFloat(batteryCapacity),
-            connector_type_AC: new mongoose.Types.ObjectId(connector_type_AC),
-            connector_type_DC: connector_type_DC ? new mongoose.Types.ObjectId(connector_type_DC) : null,
+            connector_type_AC: connector_type_AC,
+            connector_type_DC: connector_type_DC,
             battery_health: batteryHealth ? parseFloat(batteryHealth) : null,
             max_power_AC: parseFloat(chargingPowerAC),
             max_power_DC: parseFloat(chargingPowerDC),
@@ -72,32 +72,25 @@ const addVehicle = asyncHandler(async (req, res) => {
         owner.vehicles.push(vehicleData);
         await owner.save();
 
+        const updatedOwner = await EvOwner.findById(ownerId);
+        // console.log(updatedOwner)
+
         // Get the newly added vehicle ID
-        const newVehicleId = owner.vehicles[owner.vehicles.length - 1]._id;
+        const newVehicle = updatedOwner.vehicles[updatedOwner.vehicles.length - 1];
+        const vehicleId = newVehicle._id;
 
-        // Fetch the owner again and populate vehicles
-        const updatedOwner = await EvOwner.findById(ownerId)
-            .populate('vehicles.make', 'name')
-            .populate('vehicles.model', 'name')
-            .populate('vehicles.color', 'name')
-            .populate('vehicles.connector_type_AC', 'name')
-            .populate('vehicles.connector_type_DC', 'name');
-
-        // Find the newly added vehicle in the populated array
-        const populatedVehicle = updatedOwner.vehicles.id(newVehicleId);
-        console.log(populatedVehicle)
-
-        if (!populatedVehicle) {
-            return res.status(404).json({
-                success: false,
-                message: 'Vehicle not found after creation'
-            });
-        }
-
-        res.status(201).json({
+        const response = {
             success: true,
-            data: populatedVehicle
-        });
+            message: 'Vehicle added successfully',
+            data: {
+                userID: ownerId,
+                newVehicleID: vehicleId
+            }
+
+        }
+        // console.log("Response ", response);
+
+       res.status(201).json(response);
 
     } catch (error) {
         console.error('Error in addVehicle:', error);
