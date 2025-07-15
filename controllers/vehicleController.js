@@ -65,7 +65,8 @@ const addVehicle = asyncHandler(async (req, res) => {
             battery_health: batteryHealth ? parseFloat(batteryHealth) : null,
             max_power_AC: parseFloat(chargingPowerAC),
             max_power_DC: parseFloat(chargingPowerDC),
-            image: req.file ? `/uploads/vehicles/${req.file.filename}` : null
+            image: req.file ? `/uploads/vehicles/${req.file.filename}` : null,
+            isActive: true
         };
 
         // Add the vehicle and save
@@ -168,7 +169,7 @@ const fetchVehicles = asyncHandler(async (req, res) => {
         }
 
         const formattedVehicles = user.vehicles
-            .filter(vehicle => vehicle !== null)
+            .filter(vehicle => vehicle !== null && vehicle.isActive === true)
             .map(vehicle => {
                 // Format vehicle data
                 const vehicleData = {
@@ -218,7 +219,7 @@ const getVehicleByID = async (req, res) => {
             });
         }
 
-        const vehicle = user.vehicles.find(v => v && v._id.toString() === vehicleID);
+        const vehicle = user.vehicles.find(v => v && v._id.toString() === vehicleID && v.isActive === true);
 
         if (!vehicle) {
             return res.status(404).json({
@@ -254,11 +255,51 @@ const getVehicleByID = async (req, res) => {
     }
 }
 
+const deactivateVehicle = async (req, res) => {
+    try {
+        const { userID, vehicleID } = req.body;
+        const result = await EvOwner.findOneAndUpdate(
+            {
+                _id: userID,
+                "vehicles._id": vehicleID,
+            },
+            {
+                $set: {
+                    "vehicles.$.isActive": false,
+                    "vehicles.$.updatedAt": new Date()
+                }
+            },
+            { new: true }
+        );
+
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: 'User or vehicle not found',
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Vehicle deleted successfully',
+        });
+
+    } catch (error) {
+        console.error('Error deactivating vehicle:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while deactivating vehicle',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+}
+
 module.exports = {
     getDropdownData,
     getConnectorTypes,
     addVehicle,
     uploadVehicleImage,
     fetchVehicles,
-    getVehicleByID
+    getVehicleByID,
+    deactivateVehicle
 };
