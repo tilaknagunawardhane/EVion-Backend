@@ -97,6 +97,11 @@ const vehicleSchema = new mongoose.Schema({
     image: {
         type: String,
         required: false
+    },
+    isActive: {
+        type: Boolean,
+        default: true,
+        required: true
     }
 }, {
     _id: true,
