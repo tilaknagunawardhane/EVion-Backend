@@ -63,8 +63,8 @@ const loginUser = async (Model, req, res) => {
 
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             message: 'Internal server error',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -72,21 +72,25 @@ const loginUser = async (Model, req, res) => {
 };
 
 const registerUser = async (Model, req, res) => {
-    const { email, password, ...rest } = req.body;
+    const { name, email, password } = req.body;
+    console.log('req body is: ', req.body);
 
     try {
-        let user = await Model.find({ email });
+        let user = await Model.findOne({ email });
         if (user) {
-            return res.status(400).json({ message: 'User already exists' });
+            return res.status(400).json({ 
+                success: false,
+                message: 'User already exists' 
+            });
         }
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         user = await Model.create({
+            name,
             email,
             password: hashedPassword,
-            ...rest
         });
 
         const payload = {
@@ -99,18 +103,25 @@ const registerUser = async (Model, req, res) => {
             payload.role = user.role;
         }
 
-          // Generate both access and refresh tokens
+        // Generate tokens
         const accessToken = generateToken(payload, '15m');
         const refreshToken = generateToken({ id: user._id }, '7d');
 
-        res.cookie('token', token, {
+        // Set cookies (optional for mobile clients)
+        res.cookie('accessToken', accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            maxAge: 1 * 60 * 60 * 1000
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+        
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
         const userData = user.toObject();
-        delete userData.password; // Remove password from response
+        delete userData.password;
 
         res.status(201).json({
             success: true,
@@ -119,52 +130,56 @@ const registerUser = async (Model, req, res) => {
             refreshToken,
             user: userData
         });
-    }
-    catch (error) {
+
+    } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ message: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
 // authController.js
 exports.refreshToken = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token required' });
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) {
+            return res.status(401).json({ message: 'Refresh token required' });
+        }
+
+        const decoded = await verifyToken(refreshToken);
+
+        let user;
+        switch (decoded.userType) {
+            case 'admin':
+                user = await Admin.findById(decoded.id);
+                break;
+            case 'evowner':
+                user = await EvOwner.findById(decoded.id);
+                break;
+            case 'stationowner':
+                user = await StationOwner.findById(decoded.id);
+                break;
+            default:
+                return res.status(400).json({ message: 'Invalid user type' });
+        }
+
+        if (!user) {
+            return res.status(401).json({ message: 'User not found' });
+        }
+
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user, decoded.userType);
+
+        res.status(200).json({
+            accessToken,
+            refreshToken: newRefreshToken,
+        });
+    } catch (error) {
+        console.error('Refresh token error:', error);
+        res.status(401).json({ message: 'Invalid refresh token' });
     }
-
-    const decoded = await verifyToken(refreshToken);
-    
-    let user;
-    switch (decoded.userType) {
-      case 'admin':
-        user = await Admin.findById(decoded.id);
-        break;
-      case 'evowner':
-        user = await EvOwner.findById(decoded.id);
-        break;
-      case 'stationowner':
-        user = await StationOwner.findById(decoded.id);
-        break;
-      default:
-        return res.status(400).json({ message: 'Invalid user type' });
-    }
-
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user, decoded.userType);
-
-    res.status(200).json({
-      accessToken,
-      refreshToken: newRefreshToken,
-    });
-  } catch (error) {
-    console.error('Refresh token error:', error);
-    res.status(401).json({ message: 'Invalid refresh token' });
-  }
 };
 
 exports.adminLogin = async (req, res) => {
