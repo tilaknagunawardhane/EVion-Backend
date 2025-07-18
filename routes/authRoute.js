@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const authMiddleware = require('../middlewares/authMiddleware');
 
 router.post('/admin/login', authController.adminLogin);
 router.post('/admin/register', authController.adminRegister);
@@ -12,6 +13,6 @@ router.post('/station-owner/login', authController.stationOwnerLogin);
 router.post('/station-owner/register', authController.stationOwnerRegister);
 
 router.post('/logout', authController.logout);
-router.get('/me', authController.getMe);
+router.get('/me', authMiddleware() ,authController.getMe);
 
 module.exports = router;
