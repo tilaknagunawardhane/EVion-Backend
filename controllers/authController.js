@@ -214,11 +214,46 @@ exports.logout = (req, res) => {
 //Get current user
 exports.getMe = async (req, res) => {
     try {
-        const user = req.user.toObject();
-        delete user.password;
-        res.json(user);
+        // Verify user exists in request
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated'
+            });
+        }
+
+        // Convert Mongoose document to plain object if needed
+        const userObj = req.user.toObject ? req.user.toObject() : req.user;
+
+        // Sanitize user data
+        const { password, __v, refreshToken, ...safeUserData } = userObj;
+
+        // Add any computed fields
+        safeUserData.isVerified = !!safeUserData.verified;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                user: safeUserData,
+                // Include any additional metadata
+                roles: safeUserData.roles || ['user'],
+                permissions: getPermissionsForUser(safeUserData)
+            }
+        });
+
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Server error' });
+        console.error('GetMe error:', err);
+        
+        // Differentiate between server errors and validation errors
+        const statusCode = err.name === 'ValidationError' ? 400 : 500;
+        
+        res.status(statusCode).json({
+            success: false,
+            message: 'Error fetching user data',
+            error: process.env.NODE_ENV === 'development' ? {
+                message: err.message,
+                stack: err.stack
+            } : undefined
+        });
     }
-};  
+};
