@@ -4,19 +4,35 @@ const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
 
+const generateTokens = (user, userType) => {
+    const accessToken = generateToken({
+        id: user._id,
+        email: user.email,
+        userType,
+        role: user.role,
+    }, '15m'); // 15 minutes expiration
+
+    const refreshToken = generateToken({
+        id: user._id,
+        userType,
+    }, '7d'); // 7 days expiration
+
+    return { accessToken, refreshToken };
+};
+
 //Common Login
 const loginUser = async (Model, req, res) => {
     const { email, password } = req.body;
 
     try {
-        const user = await Model.findOne({ email });
+        const user = await Model.findOne({ email }).select('+password');
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({ success: false, message: 'User not found' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
         const payload = {
@@ -24,33 +40,34 @@ const loginUser = async (Model, req, res) => {
             email: user.email,
             userType: Model.modelName.toLowerCase()
         };
-        console.log('User payload:', payload);
 
         if (Model.modelName === 'Admin') {
-            payload.role = user.role; // Include role for Admin
+            payload.role = user.role;
         }
-        const token = generateToken(payload);
-        console.log('Generated token:', token);
 
-        res.cookie('token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: 1 * 60 * 60 * 1000
-        });
+        // Generate both tokens
+        const accessToken = generateToken(payload, '15m'); // 15 minutes expiration
+        const refreshToken = generateToken({ id: user._id }, '7d'); // 7 days expiration
 
+        // Return tokens in response (don't set cookie for mobile clients)
         const userData = user.toObject();
-        delete userData.password; // Remove password from response
+        delete userData.password;
 
         res.status(200).json({
             success: true,
             message: 'Login successful',
-            token,
+            accessToken,
+            refreshToken,
             user: userData
         });
-    }
-    catch (error) {
+
+    } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ message: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -82,7 +99,9 @@ const registerUser = async (Model, req, res) => {
             payload.role = user.role;
         }
 
-        const token = generateToken(payload);
+          // Generate both access and refresh tokens
+        const accessToken = generateToken(payload, '15m');
+        const refreshToken = generateToken({ id: user._id }, '7d');
 
         res.cookie('token', token, {
             httpOnly: true,
@@ -96,7 +115,8 @@ const registerUser = async (Model, req, res) => {
         res.status(201).json({
             success: true,
             message: 'Registration successful',
-            token,
+            accessToken,
+            refreshToken,
             user: userData
         });
     }
@@ -104,6 +124,47 @@ const registerUser = async (Model, req, res) => {
         console.error('Registration error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
+};
+
+// authController.js
+exports.refreshToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh token required' });
+    }
+
+    const decoded = await verifyToken(refreshToken);
+    
+    let user;
+    switch (decoded.userType) {
+      case 'admin':
+        user = await Admin.findById(decoded.id);
+        break;
+      case 'evowner':
+        user = await EvOwner.findById(decoded.id);
+        break;
+      case 'stationowner':
+        user = await StationOwner.findById(decoded.id);
+        break;
+      default:
+        return res.status(400).json({ message: 'Invalid user type' });
+    }
+
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user, decoded.userType);
+
+    res.status(200).json({
+      accessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(401).json({ message: 'Invalid refresh token' });
+  }
 };
 
 exports.adminLogin = async (req, res) => {
@@ -137,12 +198,12 @@ exports.logout = (req, res) => {
 
 //Get current user
 exports.getMe = async (req, res) => {
-     try {
-    const user = req.user.toObject();
-    delete user.password;
-    res.json(user);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
+    try {
+        const user = req.user.toObject();
+        delete user.password;
+        res.json(user);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server error' });
+    }
 };  
