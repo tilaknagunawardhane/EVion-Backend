@@ -3,6 +3,14 @@ const { generateToken } = require('../config/jwt');
 const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
+const { imageUpload } = require('../utils/fileUpload');
+const path = require('path');
+
+exports.uploadImage = imageUpload({
+    destination: 'uploads/stationOwners',
+    fieldName: 'nicImage',
+    maxFileSize: 10 * 1024 * 1024 // 10MB
+});
 
 const generateTokens = (user, userType) => {
     const accessToken = generateToken({
@@ -79,9 +87,9 @@ const registerUser = async (Model, req, res) => {
     try {
         let user = await Model.findOne({ email });
         if (user) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                message: 'User already exists' 
+                message: 'User already exists'
             });
         }
 
@@ -115,7 +123,7 @@ const registerUser = async (Model, req, res) => {
             secure: process.env.NODE_ENV === 'production',
             maxAge: 15 * 60 * 1000 // 15 minutes
         });
-        
+
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -135,7 +143,130 @@ const registerUser = async (Model, req, res) => {
 
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+const registerStationOwner = async (req, res) => {
+    const {
+        name,
+        email,
+        contact,
+        password,
+        businessName,
+        businessRegistrationNumber,
+        taxId,
+        district,
+        accountHolderName,
+        bank,
+        branch,
+        accountNumber,
+        nic
+    } = req.body;
+
+    const nicImage = req.file; // Assuming you're using multer for file upload
+    if (!nicImage) {
+        return res.status(400).json({
+            success: false,
+            message: 'NIC image is required'
+        });
+    }
+    console.log('rey.body: ', req.body);
+    try {
+        // Check if user already exists
+        const existingUser = await StationOwner.findOne({ $or: [{ email: email }, { nic: nic }] });
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: 'User with this email or NIC already exists'
+            });
+        }
+
+        // Validate business registration number uniqueness
+        const existingBusiness = await StationOwner.findOne({ businessRegistrationNumber });
+        if (existingBusiness) {
+            return res.status(400).json({
+                success: false,
+                message: 'Business registration number already in use'
+            });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Create new station owner
+        const stationOwner = await StationOwner.create({
+            name,
+            email,
+            contact,
+            password: hashedPassword,
+            businessName,
+            businessRegistrationNumber,
+            taxId,
+            district,
+            accountHolderName,
+            bank,
+            branch,
+            accountNumber,
+            nic,
+            nicImage: nicImage ? `/uploads/stationOwners/${nicImage.filename}` : null, // Store file path if uploaded
+        });
+
+        // Generate tokens
+        const payload = {
+            id: stationOwner._id,
+            email: stationOwner.email,
+            userType: 'stationowner',
+        };
+
+        const accessToken = generateToken(payload, '15m');
+        const refreshToken = generateToken({ id: stationOwner._id }, '7d');
+
+        // Set cookies (optional)
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        // Prepare response data (exclude sensitive fields)
+        const stationOwnerData = stationOwner.toObject();
+        delete stationOwnerData.password;
+        delete stationOwnerData.__v;
+
+        // Send welcome email (optional)
+        // await sendWelcomeEmail(stationOwner.email, stationOwner.name);
+
+        res.status(201).json({
+            success: true,
+            message: 'Registration successful. Account pending verification.',
+            accessToken,
+            refreshToken,
+            user: stationOwnerData
+        });
+
+    } catch (error) {
+        console.error('Station owner registration error:', error);
+
+        // Clean up uploaded file if registration failed
+        if (req.file) {
+            fs.unlink(req.file.path, (err) => {
+                if (err) console.error('Error deleting uploaded file:', err);
+            });
+        }
+
+        res.status(500).json({
             success: false,
             message: 'Internal server error',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -205,7 +336,7 @@ exports.stationOwnerLogin = async (req, res) => {
 };
 
 exports.stationOwnerRegister = async (req, res) => {
-    registerUser(StationOwner, req, res);
+    registerStationOwner(req, res);
 };
 
 exports.logout = (req, res) => {
@@ -245,10 +376,10 @@ exports.getMe = async (req, res) => {
 
     } catch (err) {
         console.error('GetMe error:', err);
-        
+
         // Differentiate between server errors and validation errors
         const statusCode = err.name === 'ValidationError' ? 400 : 500;
-        
+
         res.status(statusCode).json({
             success: false,
             message: 'Error fetching user data',
@@ -259,3 +390,4 @@ exports.getMe = async (req, res) => {
         });
     }
 };
+
