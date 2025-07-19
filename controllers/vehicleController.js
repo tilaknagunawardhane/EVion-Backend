@@ -29,6 +29,8 @@ const addVehicle = asyncHandler(async (req, res) => {
             chargingPowerAC,
             chargingPowerDC
         } = req.body;
+
+        console.log(req.body);
         let connector_type_AC = null;
         let connector_type_DC = null;
 
