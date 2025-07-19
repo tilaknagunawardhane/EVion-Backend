@@ -14,5 +14,6 @@ router.post('/station-owner/register', authController.stationOwnerRegister);
 
 router.post('/logout', authController.logout);
 router.get('/me', authMiddleware() ,authController.getMe);
+router.post('/refresh-token', authController.refreshToken);
 
 module.exports = router;
