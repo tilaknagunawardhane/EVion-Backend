@@ -38,19 +38,19 @@ const stationOwnerSchema = new mongoose.Schema({
     businessRegistrationNumber: {
         type: String,
         required: false,
-        unique: true
+        // unique: true
     },
     taxId: {
         type: String,
         required: false,
-        unique: true
+        // unique: true
     },
 
     // Location Information
     district: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'District',
-        required: [true, 'District is required']
+        required: false
     },
 
     // Bank Account Information
