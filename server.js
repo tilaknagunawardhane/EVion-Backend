@@ -25,6 +25,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 const evOwnerRoutes = require('./routes/evOwnerRoute');
 const bookingRoutes = require('./routes/bookingRoute');
 const vehicleRoutes = require('./routes/vehicleRoute');
+const commonRoutes = require('./routes/commonRoute');
 // const commonRoutes = require('./routes/commonRoute');
 const authRoutes = require('./routes/authRoute');
 
@@ -35,7 +36,7 @@ const authRoutes = require('./routes/authRoute');
 app.use('/api/evowners', evOwnerRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/vehicles', vehicleRoutes);
-// app.use('/api/common', commonRoutes);
+app.use('/api/common', commonRoutes);
 
 app.use('/api/auth', authRoutes);
 // app.use('/api/admin', adminRoutes);

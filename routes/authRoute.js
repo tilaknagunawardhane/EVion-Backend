@@ -10,7 +10,7 @@ router.post('/evOwner/login', authController.evOwnerLogin);
 router.post('/evOwner/register', authController.evOwnerRegister);
 
 router.post('/station-owner/login', authController.stationOwnerLogin);
-router.post('/station-owner/register', authController.stationOwnerRegister);
+router.post('/station-owner/register', authController.uploadImage ,authController.stationOwnerRegister);
 
 router.post('/logout', authController.logout);
 router.get('/me', authMiddleware() ,authController.getMe);
