@@ -5,6 +5,7 @@ const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
 const { imageUpload } = require('../utils/fileUpload');
 const path = require('path');
+const fs = require('fs');
 
 exports.uploadImage = imageUpload({
     destination: 'uploads/stationOwners',
@@ -157,10 +158,10 @@ const registerStationOwner = async (req, res) => {
         email,
         contact,
         password,
-        businessName,
-        businessRegistrationNumber,
-        taxId,
-        district,
+       businessName = null,  // Set default as null
+        businessRegistrationNumber = null,
+        taxId = null,
+        district = null,
         accountHolderName,
         bank,
         branch,
@@ -205,16 +206,17 @@ const registerStationOwner = async (req, res) => {
             email,
             contact,
             password: hashedPassword,
-            businessName,
-            businessRegistrationNumber,
-            taxId,
-            district,
             accountHolderName,
             bank,
             branch,
             accountNumber,
             nic,
-            nicImage: nicImage ? `/uploads/stationOwners/${nicImage.filename}` : null, // Store file path if uploaded
+            nicImage: nicImage ? `/uploads/stationOwners/${nicImage.filename}` : null, // Store file path if uploaded,
+            // Only include business fields if they have values
+            ...(businessName && { businessName }),
+            ...(businessRegistrationNumber && { businessRegistrationNumber }),
+            ...(taxId && { taxId }),
+            ...(district && { district })
         });
 
         // Generate tokens
