@@ -23,6 +23,7 @@ const generateTokens = (user, userType) => {
 //Common Login
 const loginUser = async (Model, req, res) => {
     const { email, password } = req.body;
+    console.log(req.body);
 
     try {
         const user = await Model.findOne({ email }).select('+password');
@@ -96,7 +97,8 @@ const registerUser = async (Model, req, res) => {
         const payload = {
             id: user._id,
             email: user.email,
-            userType: Model.modelName.toLowerCase()
+            userType: Model.modelName.toLowerCase(),
+
         };
 
         if (Model.modelName === 'Admin') {

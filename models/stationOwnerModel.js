@@ -22,3 +22,4 @@ const stationOwnerSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const StationOwner = mongoose.model('StationOwner', stationOwnerSchema);
+module.exports = StationOwner;
