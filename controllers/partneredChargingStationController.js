@@ -4,29 +4,36 @@ const StationOwner = require('../models/stationOwnerModel');
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
-        const { userId } = req.body; // Only need userId since email isn't used
+        const { userId } = req.body;
         
-        // Verify station owner exists
+        // 1. Verify station owner exists
         const owner = await StationOwner.findById(userId);
         if (!owner) {
-            return res.status(400).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Station Owner not found' 
+                message: 'Station owner not found'
             });
         }
 
-        // Check station count
-        const stationCount = await PartneredChargingStation.countDocuments({ 
+        // 2. Get all stations for this owner
+        const stations = await PartneredChargingStation.find({ 
             station_owner_id: userId 
-        });
-        console.log('no of stations: ', stationCount);
-        
+        }).select('request_status station_status');
+
+        // 3. Check conditions
+        const hasApprovedStation = stations.some(
+            station => station.request_status === 'approved'
+        );
+        const totalStations = stations.length;
+
         res.status(200).json({
             success: true,
-            hasStations: stationCount > 0,
-            stationCount // Optional: include actual count
+            hasStations: totalStations > 0,
+            hasApprovedStation,
+            totalStations,
+            stations // Optional: include station details if needed
         });
-        
+
     } catch (error) {
         console.error('Station check error:', error);
         res.status(500).json({
