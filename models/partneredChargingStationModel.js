@@ -69,7 +69,7 @@ const partneredChargingStationSchema = new mongoose.Schema({
     },
     request_status: {
         type: String,
-        enum: ['processing', 'approved', 'to-be-installed'],
+        enum: ['processing', 'approved', 'to-be-installed', 'finished'],
         default: 'processing',
         required: true
     },
