@@ -367,7 +367,7 @@ exports.getMe = async (req, res) => {
 
         // Add any computed fields
         safeUserData.isVerified = !!safeUserData.verified;
-        console.log('safe: ', safeUserData);
+        // console.log('safe: ', safeUserData);
 
         res.status(200).json({
             success: true,
