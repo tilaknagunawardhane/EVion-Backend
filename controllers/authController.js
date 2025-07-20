@@ -68,7 +68,8 @@ const loginUser = async (Model, req, res) => {
             message: 'Login successful',
             accessToken,
             refreshToken,
-            user: userData
+            user: userData,
+            userType: Model.modelName.toLowerCase(),
         });
 
     } catch (error) {
@@ -362,17 +363,19 @@ exports.getMe = async (req, res) => {
 
         // Sanitize user data
         const { password, __v, refreshToken, ...safeUserData } = userObj;
+        safeUserData.userType = req.user.userType || req.user.constructor.modelName.toLowerCase();
 
         // Add any computed fields
         safeUserData.isVerified = !!safeUserData.verified;
+        console.log('safe: ', safeUserData);
 
         res.status(200).json({
             success: true,
             data: {
                 user: safeUserData,
                 // Include any additional metadata
-                roles: safeUserData.roles || ['user'],
-                permissions: getPermissionsForUser(safeUserData)
+                roles: safeUserData.userType || ['user'],
+                // permissions: getPermissionsForUser(safeUserData)
             }
         });
 

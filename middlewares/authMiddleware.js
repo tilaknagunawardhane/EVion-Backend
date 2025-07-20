@@ -6,6 +6,7 @@ const StationOwner = require('../models/stationOwnerModel');
 
 const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req, res, next) => {
   try {
+    console.log('come to middleware');
     // Token extraction from cookies, headers, or body
     const token = req.cookies.accessToken || 
                   req.headers.authorization?.split(' ')[1] || 
@@ -19,6 +20,7 @@ const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req,
     }
 
     const decoded = await verifyToken(token);
+    console.log('decoded: ', decoded)
 
     // Find user based on userType
     let user;
@@ -48,6 +50,7 @@ const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req,
 
     // Check user type permissions
     if (allowedUserTypes.length > 0 && !allowedUserTypes.includes(decoded.userType)) {
+      console.log('inside the allowedUserTypes');
       return res.status(403).json({ 
         success: false, 
         message: 'Access forbidden for this user type' 
