@@ -6,7 +6,7 @@ const StationOwner = require('../models/stationOwnerModel');
 
 const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req, res, next) => {
   try {
-    console.log('come to middleware');
+    // console.log('come to middleware');
     // Token extraction from cookies, headers, or body
     const token = req.cookies.accessToken || 
                   req.headers.authorization?.split(' ')[1] || 
@@ -20,7 +20,7 @@ const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req,
     }
 
     const decoded = await verifyToken(token);
-    console.log('decoded: ', decoded)
+    // console.log('decoded: ', decoded)
 
     // Find user based on userType
     let user;

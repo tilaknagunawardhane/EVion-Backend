@@ -86,6 +86,6 @@ const stationOwnerSchema = new mongoose.Schema({
 });
 
 
-const StationOwner = mongoose.model('StationOwner', stationOwnerSchema);
+const StationOwner = mongoose.model('stationowner', stationOwnerSchema);
 
 module.exports = StationOwner;

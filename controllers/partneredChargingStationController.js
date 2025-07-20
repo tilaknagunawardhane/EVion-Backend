@@ -5,7 +5,7 @@ const StationOwner = require('../models/stationOwnerModel');
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.body;
-        
+
         // 1. Verify station owner exists
         const owner = await StationOwner.findById(userId);
         if (!owner) {
@@ -16,8 +16,8 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         }
 
         // 2. Get all stations for this owner
-        const stations = await PartneredChargingStation.find({ 
-            station_owner_id: userId 
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: userId
         }).select('request_status station_status');
 
         // 3. Check conditions
@@ -44,7 +44,58 @@ const checkStationsExist = asyncHandler(async (req, res) => {
     }
 });
 
+const createStation = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerID, ...stationData } = req.body;
+        //  console.log('Received data:', { stationOwnerID, stationData });
+        // console.log('req.body : ', req.body)
+        const owner = await StationOwner.findById(stationOwnerID);
+        if (!owner) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station owner not found'
+            });
+        }
+
+        // Check if owner has too many pending stations
+        const pendingCount = await PartneredChargingStation.countDocuments({
+            station_owner_id: stationOwnerID,
+            request_status: 'processing'
+        });
+
+        if (pendingCount >= 5) { // Adjust limit as needed
+            return res.status(400).json({
+                success: false,
+                message: 'You have too many pending station requests'
+            });
+        }
+
+        // Create station
+        const stationDataAll = {
+            station_owner_id: stationOwnerID,
+            ...stationData
+        };
+
+        const newStation = await PartneredChargingStation.create(stationDataAll);
+        res.status(201).json({
+            success: true,
+            message: 'Station request submitted successfully',
+            data: newStation
+        });
+
+    } catch (error) {
+        console.error('Station creation error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error creating station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+})
+
+
 
 module.exports = {
-    checkStationsExist
+    checkStationsExist,
+    createStation
 }
