@@ -216,9 +216,79 @@ const deleteStation = asyncHandler(async (req, res) => {
     }
 });
 
+// Get station data for editing
+const getStationForEdit = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerID } = req.body;
+        console.log('owner', stationOwnerID);
+        const station = await PartneredChargingStation.findOne({
+            _id: req.params.id,
+            station_owner_id: stationOwnerID
+        });
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found or not owned by user'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: station
+        });
+    } catch (error) {
+        console.error('Error fetching station for edit:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching station data',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Update station
+const updateStation = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerID, ...updateData } = req.body;
+
+        const station = await PartneredChargingStation.findOneAndUpdate(
+            {
+                _id: req.params.id,
+                station_owner_id: stationOwnerID,
+                request_status: { $in: ['processing', 'rejected'] } // Only allow editing if not approved
+            },
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found, not owned by user, or already approved'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Station updated successfully',
+            data: station
+        });
+    } catch (error) {
+        console.error('Error updating station:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
     getRequestedStations,
-    deleteStation
+    deleteStation,
+    updateStation,
+    getStationForEdit
 }
