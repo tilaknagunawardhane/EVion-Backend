@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { getDistrictsBanks,
     getBranches,
-getAllDistricts,
+    getAllDistricts,
     getConnectorsByType } = require('../controllers/commonController');
 
 router.get('/data', getDistrictsBanks);
