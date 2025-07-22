@@ -75,9 +75,13 @@ const partneredChargingStationSchema = new mongoose.Schema({
     },
     station_status: {
         type: String,
-        enum: ['active', 'in-progress', 'under-maintenance', 'closed', 'disabled'],
+        enum: ['active', 'in-progress', 'under-maintenance', 'closed', 'disabled', 'rejected'],
         default: 'in-progress',
         required: true
+    },
+    rejection_reason: {
+        type: String,
+        default: null
     },
     chargers: [chargerSchema]
 },
