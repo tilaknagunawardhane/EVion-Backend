@@ -33,7 +33,10 @@ const getAdminRequests = asyncHandler(async (req, res) => {
             const isNewUser = ownerId ? ownerStatuses[ownerId] : false;
 
             // Determine the tab (stations or connectors)
-            const type = station.station_status === 'in-progress' ? 'station' : 'connector';
+            // Updated logic: station if in-progress OR both statuses are rejected
+            const type = (station.station_status === 'in-progress' || 
+                         (station.station_status === 'rejected' && station.request_status === 'rejected')) 
+                         ? 'station' : 'connector';
 
             // Determine the status section (NEW, IN-PROGRESS, REJECTED)
             let status;
@@ -106,7 +109,6 @@ const getRequestDetails = asyncHandler(async (req, res) => {
                 message: 'Request not found'
             });
         }
-
         // Determine if this is a station or connector request
         const type = request.station_status === 'in-progress' ? 'station' : 'connector';
 
@@ -179,7 +181,83 @@ const getExistingChargers = async (ownerId, excludeStationId) => {
     );
 };
 
+const updateRequestStatus = asyncHandler(async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action } = req.body;
+
+        // Validate action
+        if (!['approve', 'complete', 'discard'].includes(action)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid action'
+            });
+        }
+
+        // Find the request
+        const request = await PartneredChargingStation.findById(id);
+        if (!request) {
+            return res.status(404).json({
+                success: false,
+                message: 'Request not found'
+            });
+        }
+
+        // Handle different actions
+        switch (action) {
+            case 'approve':
+                if (request.request_status !== 'processing') {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Request is not in processing state'
+                    });
+                }
+                request.request_status = 'approved';
+                request.station_status = 'in-progress';
+                break;
+
+            case 'complete':
+                if (request.request_status !== 'approved') {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Request must be approved first'
+                    });
+                }
+                request.request_status = 'finished';
+                request.station_status = 'active';
+                break;
+
+            case 'discard':
+                request.request_status = 'rejected';
+                request.station_status = 'rejected';
+                if (req.body.reason) {
+                    request.rejection_reason = req.body.reason;
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        await request.save();
+
+        res.status(200).json({
+            success: true,
+            data: request
+        });
+
+    } catch (error) {
+        console.error('Error updating request status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating request status',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     getAdminRequests,
     getRequestDetails,
+    updateRequestStatus
 }
