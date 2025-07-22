@@ -14,7 +14,7 @@ const otpSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     }
-}, {_id: false});
+}, { _id: false });
 
 const vehicleSchema = new mongoose.Schema({
     make: {
@@ -62,7 +62,7 @@ const vehicleSchema = new mongoose.Schema({
         validate: {
             validator: Number.isInteger,
             message: '{VALUE} is not a integer'
-        } 
+        }
     },
     connector_type_AC: {
         type: mongoose.Schema.Types.ObjectId,
