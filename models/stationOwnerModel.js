@@ -73,6 +73,11 @@ const stationOwnerSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Account number is required'],
     },
+    chargingStations: {
+        type: [mongoose.Schema.Types.ObjectId],
+        ref: 'PartneredChargingStation',
+        default: []
+    },
 
     // Timestamps
     createdAt: {

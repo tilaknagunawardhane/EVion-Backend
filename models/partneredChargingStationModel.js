@@ -19,8 +19,17 @@ const chargerSchema = new mongoose.Schema({
         type: [mongoose.Schema.Types.ObjectId], //object id array
         required: true,
         ref: 'connector'
-    }
-
+    },
+    charger_status: {
+        type: String,
+        enum: ['processing', 'to_be_installed', 'rejected', 'open', 'unavailable', 'disabled_by_SO', 'deleted'],
+        default: 'processing',
+        required: true
+    },
+    rejection_reason: {
+        type: String,
+        default: null
+    },
 }, {
     _id: true,
     timestamps: true
@@ -32,10 +41,6 @@ const partneredChargingStationSchema = new mongoose.Schema({
         ref: 'stationowner',
         required: true
     },
-    // station_owner_info: {
-    //     type: Object,
-    //     default: null
-    // },
     station_name: {
         type: String,
         required: true
@@ -45,10 +50,6 @@ const partneredChargingStationSchema = new mongoose.Schema({
         ref: 'district',
         required: true
     },
-    // district_info: {
-    //     type: Object,
-    //     default: null
-    // },
     address: {
         type: String,
         required: false
@@ -67,32 +68,15 @@ const partneredChargingStationSchema = new mongoose.Schema({
         enum: ['Grid', 'Solar', 'Hybrid'],
         required: false
     },
-    request_status: {
-        type: String,
-        enum: ['processing', 'approved', 'to-be-installed', 'finished', 'rejected'],
-        default: 'processing',
-        required: true
-    },
     station_status: {
         type: String,
-        enum: ['active', 'in-progress', 'under-maintenance', 'closed', 'disabled', 'rejected'],
-        default: 'in-progress',
+        enum: ['open', 'unavailable', 'disabled_by_SO', 'deleted'],
+        default: 'unavailable',
         required: true
-    },
-    rejection_reason: {
-        type: String,
-        default: null
     },
     chargers: [chargerSchema]
 },
     { timestamps: true });
-
-// populateRefFields({
-//     refField: 'station_owner_id',
-//     embedField: 'station_owner_info',
-//     modelName: 'StationOwner',
-//     fields: ['name', 'email', 'contact']
-// })
 
 
 //pre save hook
