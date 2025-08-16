@@ -117,7 +117,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             });
         }
 
-        
+
         const transformedStations = stations.map(station => {
             // Safe defaults for station
             const safeStation = {
@@ -146,7 +146,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     name: safeCharger.charger_name,
                     powerType: safeCharger.power_type,
                     maxPower: safeCharger.max_power_output,
-                    connectors: Array.isArray(safeCharger.connector_types) 
+                    connectors: Array.isArray(safeCharger.connector_types)
                         ? safeCharger.connector_types.map(ct => ct?.type_name || 'Unknown').filter(Boolean)
                         : []
                 };
@@ -284,11 +284,63 @@ const updateStation = asyncHandler(async (req, res) => {
     }
 });
 
+//ev owner get station details
+const getStationDetails = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        console.log('Fetching details for station:', stationId);
+        const station = await PartneredChargingStation.findById(stationId)
+            .populate('district')
+            .populate({
+                path: 'chargers.connector_types.connector',
+                model: 'connector'
+            })
+
+            .lean(); // Convert to plain JavaScript object for manipulation
+
+        if (!station) {
+            return res.status(404).json({ message: 'Station not found' });
+        }
+        let averageRating = 0;
+        if (station.ratings && station.ratings.length > 0) {
+            const totalStars = station.ratings.reduce((sum, rating) => sum + rating.stars, 0);
+            averageRating = totalStars / station.ratings.length;
+        }
+
+        const response = {
+            ...station,
+            averageRating: parseFloat(averageRating.toFixed(1)), // Round to 1 decimal place
+            totalRatings: station.ratings ? station.ratings.length : 0,
+            chargers: station.chargers.map(charger => ({
+                ...charger,
+                connector_types: charger.connector_types.map(connectorType => ({
+                    ...connectorType,
+                    connector: connectorType.connector // Already populated
+                }))
+            })),
+        }
+        res.status(200).json({
+            success: true,
+            data: response
+        });
+    }
+    catch (error) {
+        console.error('Error fetching station details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+
+})
+
 module.exports = {
     checkStationsExist,
     createStation,
     getRequestedStations,
     deleteStation,
     updateStation,
-    getStationForEdit
+    getStationForEdit,
+    getStationDetails
 }
