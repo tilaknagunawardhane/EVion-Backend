@@ -1,6 +1,27 @@
 const mongoose = require('mongoose');
 const populateRefFields = require('../utils/populateRefFields');
 
+const ratingSchema = new mongoose.Schema({
+    ev_owner_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'EvOwner',
+        required: true
+    },
+    stars: {
+        type: Number,
+        required: true,
+        enum: [1, 2, 3, 4, 5]
+    },
+    reasons: [{
+        type: String,
+        required: true
+        // You can optionally validate based on `stars` if needed
+    }],
+
+}, {
+    timestamps: true
+});
+
 const chargerSchema = new mongoose.Schema({
     charger_name: {
         type: String,
@@ -15,11 +36,24 @@ const chargerSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    connector_types: {
-        type: [mongoose.Schema.Types.ObjectId], //object id array
-        required: true,
-        ref: 'connector'
+    price:{
+        type: Number,
+        required: true
     },
+    connector_types: [
+        {
+            connector: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Connector',
+                required: true
+            },
+            status: {
+                type: String,
+                enum: ['available', 'unavailable'],
+                required: true
+            }
+        }
+    ],
     charger_status: {
         type: String,
         enum: ['processing', 'to_be_installed', 'rejected', 'open', 'unavailable', 'disabled_by_SO', 'deleted'],
@@ -74,27 +108,10 @@ const partneredChargingStationSchema = new mongoose.Schema({
         default: 'unavailable',
         required: true
     },
-    chargers: [chargerSchema]
+    chargers: [chargerSchema],
+    ratings: [ratingSchema]
 },
     { timestamps: true });
-
-
-//pre save hook
-// partneredChargingStationSchema.pre('save', async function (next) {
-//     if (this.isModified('station_owner_id') || this.isNew) {
-//         try {
-//             const station_owner_doc = await mongoose.model('stationowner').findById(this.station_owner_id);
-//             if (station_owner_doc) {
-//                 this.station_owner_info = {
-//                     name: station_owner_doc.name
-//                 };
-//             }
-//         } catch (err) {
-//             return next(err);
-//         }
-//     }
-//     next();
-// });
 
 const PartneredChargingStation = mongoose.model('partneredChargingStation', partneredChargingStationSchema);
 module.exports = PartneredChargingStation;
