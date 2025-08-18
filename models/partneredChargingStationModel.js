@@ -44,7 +44,7 @@ const chargerSchema = new mongoose.Schema({
         {
             connector: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: 'Connector',
+                ref: 'connector',
                 required: true
             },
             status: {
