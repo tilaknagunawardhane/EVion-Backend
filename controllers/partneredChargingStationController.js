@@ -366,6 +366,70 @@ const getStationDetails = asyncHandler(async (req, res) => {
     }
 });
 
+const toggleFavoriteStation = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const { userId } = req.body;
+
+        // Validate inputs
+         if (!stationId || !userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID and User ID are required'
+            });
+        }
+
+        // Find the EV owner
+        const evOwner = await EvOwner.findById(userId);
+        if (!evOwner) {
+            return res.status(404).json({
+                success: false,
+                message: 'EV Owner not found'
+            });
+        }
+
+        // Check if station exists
+        const stationExists = await PartneredChargingStation.exists({ _id: stationId });
+        if (!stationExists) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        // Toggle favorite status
+        const favoriteIndex = evOwner.favourite_stations.indexOf(stationId);
+        let isFavorite;
+
+        if (favoriteIndex === -1) {
+            // Add to favorites
+            evOwner.favourite_stations.push(stationId);
+            isFavorite = true;
+        } else {
+            // Remove from favorites
+            evOwner.favourite_stations.splice(favoriteIndex, 1);
+            isFavorite = false;
+        }
+
+        // Save the updated EV owner
+        await evOwner.save();
+
+        res.status(200).json({
+            success: true,
+            isFavorite,
+            message: isFavorite ? 'Station added to favorites' : 'Station removed from favorites'
+        });
+
+    } catch (error) {
+        console.error('Error toggling favorite station:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while toggling favorite station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -373,5 +437,6 @@ module.exports = {
     deleteStation,
     updateStation,
     getStationForEdit,
-    getStationDetails
+    getStationDetails,
+    toggleFavoriteStation
 }
