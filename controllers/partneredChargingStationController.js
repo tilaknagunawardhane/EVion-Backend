@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
 const StationOwner = require('../models/stationOwnerModel');
+const path = require('path');
+const EvOwner = require('../models/evOwnerModel');
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -288,7 +290,9 @@ const updateStation = asyncHandler(async (req, res) => {
 const getStationDetails = asyncHandler(async (req, res) => {
     try {
         const { stationId } = req.params;
-        console.log('Fetching details for station:', stationId);
+        const {userID} = req.body;
+        // console.log('Fetching details for station:', stationId);
+        // console.log('User ID is :', userID);
 
         const station = await PartneredChargingStation.findById(stationId)
             .populate('station_owner_id', 'name email phone') // Only select specific fields
@@ -310,6 +314,17 @@ const getStationDetails = asyncHandler(async (req, res) => {
             });
         }
 
+        // Check if user has this station in favourites
+        let isFavourite = false;
+        // Only check favorites if userID is provided
+        if (userID) {
+            const evOwner = await EvOwner.findById(userID);
+            if (evOwner) {
+                isFavourite = evOwner.favourite_stations.includes(stationId);
+            }
+        }
+        // console.log('Is favourite:', isFavourite);
+
         // Calculate average rating
         let averageRating = 0;
         if (station.ratings && station.ratings.length > 0) {
@@ -327,12 +342,14 @@ const getStationDetails = asyncHandler(async (req, res) => {
                 price: charger.price || 0, // Ensure price exists
                 connector_types: charger.connector_types.map(connectorType => ({
                     status: connectorType.status,
-                    connector: connectorType.connector || null // Handle missing connectors
+                    connector: connectorType.connector || null ,// Handle missing connectors
+                    connector_img: connectorType.connector?.image ? path.join('/uploads', connectorType.connector.image) : null
                 })),
                 charger_status: charger.charger_status || 'processing',
                 rejection_reason: charger.rejection_reason || null
             })),
-            station_status: station.station_status || 'unavailable'
+            station_status: station.station_status || 'unavailable',
+            isBookmarked: isFavourite,
         };
 
         res.status(200).json({

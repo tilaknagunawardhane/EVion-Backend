@@ -11,6 +11,6 @@ router.post('/get-request-stations', getRequestedStations);
 router.delete('/delete-station/:id', deleteStation);
 router.post('/edit-station/:id', getStationForEdit);
 router.put('/update-station/:id', updateStation);
-router.get('/station-details/:stationId', getStationDetails);
+router.post('/station-details/:stationId', getStationDetails);
 
 module.exports = router;
