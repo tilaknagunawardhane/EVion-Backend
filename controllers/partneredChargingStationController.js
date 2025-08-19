@@ -18,12 +18,16 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         // 2. Get all stations for this owner
         const stations = await PartneredChargingStation.find({
             station_owner_id: userId
-        }).select('request_status station_status');
+        }).select('request_status station_status chargers');
 
         // 3. Check conditions
-        const hasApprovedStation = stations.some(
-            station => station.request_status === 'finished'
-        );
+        const hasApprovedStation = stations.some(station => {
+
+            return station.chargers && station.chargers.some(charger => 
+                ['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
+            );
+        });
+
         const totalStations = stations.length;
 
         res.status(200).json({
@@ -103,7 +107,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerID } = req.body;
         // console.log('req body', req.body);
-        const stations = await PartneredChargingStation.find({ station_owner_id: stationOwnerID, station_status: 'in-progress' })
+        const stations = await PartneredChargingStation.find({ station_owner_id: stationOwnerID })
             .populate('station_owner_id', 'name email')
             .populate('district', 'name')
             .populate('chargers.connector_types', 'type_name')
@@ -117,12 +121,22 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             });
         }
 
+        const filteredStations = stations.filter(station => {
+            // If station has no chargers, include it
+            if (!station.chargers || station.chargers.length === 0) return true;
+            
+            // Check if ALL chargers don't have the excluded statuses
+            return station.chargers.every(charger => 
+                !['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
+            );
+        });
 
-        const transformedStations = stations.map(station => {
+
+
+        const transformedStations = filteredStations.map(station => {
             // Safe defaults for station
             const safeStation = {
                 station_name: '',
-                request_status: 'processing',
                 address: '',
                 city: '',
                 district: null,
@@ -139,6 +153,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     power_type: 'Unknown',
                     max_power_output: 0,
                     connector_types: [],
+                    charger_status: 'processing',
                     ...charger
                 };
 
@@ -146,6 +161,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     name: safeCharger.charger_name,
                     powerType: safeCharger.power_type,
                     maxPower: safeCharger.max_power_output,
+                    status: safeCharger.charger_status,
                     connectors: Array.isArray(safeCharger.connector_types)
                         ? safeCharger.connector_types.map(ct => ct?.type_name || 'Unknown').filter(Boolean)
                         : []
