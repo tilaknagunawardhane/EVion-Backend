@@ -19,6 +19,7 @@ const ratingSchema = new mongoose.Schema({
     }],
 
 }, {
+    _id: true,
     timestamps: true
 });
 
@@ -36,12 +37,12 @@ const chargerSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    price:{
+    price: {
         type: Number,
         required: true
     },
     connector_types: [
-        {
+        new mongoose.Schema({
             connector: {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'connector',
@@ -52,7 +53,7 @@ const chargerSchema = new mongoose.Schema({
                 enum: ['available', 'unavailable'],
                 required: true
             }
-        }
+        }, { _id: true }) // This ensures each connector has its own ObjectId
     ],
     charger_status: {
         type: String,
