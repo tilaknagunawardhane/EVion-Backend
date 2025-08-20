@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, getStationForEdit, getStationDetails, toggleFavoriteStation } = require('../controllers/partneredChargingStationController');
+const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, getStationForEdit, getStationDetails, toggleFavoriteStation, getFavoriteStations } = require('../controllers/partneredChargingStationController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 // router.get('/check-stations', authMiddleware(['station-owner'], ['station-owner']), checkStationsExist);
@@ -13,5 +13,6 @@ router.post('/edit-station/:id', getStationForEdit);
 router.put('/update-station/:id', updateStation);
 router.post('/station-details/:stationId', getStationDetails);
 router.post('/toggle-favorite/:stationId', toggleFavoriteStation);
+router.get('/favorites/:userId', getFavoriteStations);
 
 module.exports = router;

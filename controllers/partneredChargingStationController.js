@@ -419,12 +419,101 @@ const toggleFavoriteStation = asyncHandler(async (req, res) => {
             isFavorite,
             message: isFavorite ? 'Station added to favorites' : 'Station removed from favorites'
         });
-
     } catch (error) {
         console.error('Error toggling favorite station:', error);
         res.status(500).json({
             success: false,
             message: 'Server error while toggling favorite station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// controllers/partneredChargingStationController.js
+
+const getFavoriteStations = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Validate user ID
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID and User ID are required'
+            });
+        }
+
+        // Find the EV owner with populated favourite stations
+        const evOwner = await EvOwner.findById(userId)
+            .populate({
+                path: 'favourite_stations',
+                populate: [
+                    {
+                        path: 'district',
+                        select: 'name province'
+                    },
+                    {
+                        path: 'chargers.connector_types.connector',
+                        model: 'connector'
+                    }
+                ]
+            })
+            .lean();
+
+        if (!evOwner) {
+            return res.status(404).json({
+                success: false,
+                message: 'EV Owner not found'
+            });
+        }
+
+        // Transform the data for frontend
+        const favouriteStations = evOwner.favourite_stations.map(station => {
+            // Calculate average rating
+            let averageRating = 0;
+            if (station.ratings && station.ratings.length > 0) {
+                const totalStars = station.ratings.reduce((sum, rating) => sum + rating.stars, 0);
+                averageRating = totalStars / station.ratings.length;
+            }
+
+            return {
+                _id: station._id,
+                station_name: station.station_name,
+                address: station.address,
+                city: station.city,
+                district: station.district,
+                station_status: station.station_status || 'unavailable',
+                electricity_provider: station.electricity_provider,
+                power_source: station.power_source,
+                chargers: station.chargers?.map(charger => ({
+                    charger_name: charger.charger_name,
+                    power_type: charger.power_type,
+                    max_power_output: charger.max_power_output,
+                    price: charger.price,
+                    charger_status: charger.charger_status,
+                    connector_types: charger.connector_types?.map(connectorType => ({
+                        status: connectorType.status,
+                        connector: connectorType.connector
+                    }))
+                })) || [],
+                ratings: station.ratings || [],
+                averageRating: parseFloat(averageRating.toFixed(1)),
+                totalRatings: station.ratings ? station.ratings.length : 0,
+                createdAt: station.createdAt,
+                updatedAt: station.updatedAt
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: favouriteStations
+        });
+
+    } catch (error) {
+        console.error('Error fetching favourite stations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching favourite stations',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -438,5 +527,6 @@ module.exports = {
     updateStation,
     getStationForEdit,
     getStationDetails,
-    toggleFavoriteStation
+    toggleFavoriteStation,
+    getFavoriteStations
 }
