@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const stationReportSchema = new mongoose.Schema({
     user_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'evowner',
+        ref: 'EvOwner',
         required: true
     },
     station_id: {
