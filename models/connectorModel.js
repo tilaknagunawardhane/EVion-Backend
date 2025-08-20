@@ -14,7 +14,10 @@ const connectorSchema = new mongoose.Schema({
         required: false
     }
 },
-    {timestamps: true});
+    {
+        _id: true,
+        timestamps: true
+    });
 
 const Connector = mongoose.model('connector', connectorSchema);
 module.exports = Connector;
