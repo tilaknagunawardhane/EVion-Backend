@@ -169,7 +169,7 @@ const getRequestDetails = asyncHandler(async (req, res) => {
         const station = await PartneredChargingStation.findOne({
             'chargers._id': id
         })
-            .populate('station_owner_id', 'name email phone account_status createdAt')
+            .populate('station_owner_id', 'name email phone account_status createdAt businessName businessRegistrationNumber')
             .populate('district', 'name')
             .populate({
                 path: 'chargers',
@@ -227,9 +227,19 @@ const getRequestDetails = asyncHandler(async (req, res) => {
             title: 'Charger Request Details',
             stationStatus,
             stationName: station.station_name,
+            stationOwner: station.station_owner_id.name || 'Unknown',
+            ownerAccountStatus: station.station_owner_id.account_status || 'N/A',
+            ownerRegisteredOn: station.station_owner_id.createdAt.toLocaleString('en-US', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+            }),
+            email: station.station_owner_id.email || 'N/A',
             address: station.address,
             city: station.city,
             district: station.district?.name || 'N/A',
+            businessRegNo: station.station_owner_id.businessRegistrationNumber || 'N/A',
+            businessName: station.station_owner_id.businessName || 'N/A',
             electricityProvider: station.electricity_provider,
             powerSource: station.power_source,
             newChargers: newChargers.map(c => ({
