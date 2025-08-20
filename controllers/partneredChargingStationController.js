@@ -341,6 +341,7 @@ const getStationDetails = asyncHandler(async (req, res) => {
                 ...charger,
                 price: charger.price || 0, // Ensure price exists
                 connector_types: charger.connector_types.map(connectorType => ({
+                    connector_id: connectorType._id,
                     status: connectorType.status,
                     connector: connectorType.connector || null ,// Handle missing connectors
                     connector_img: connectorType.connector?.image ? path.join('/uploads', connectorType.connector.image) : null
@@ -351,6 +352,8 @@ const getStationDetails = asyncHandler(async (req, res) => {
             station_status: station.station_status || 'unavailable',
             isBookmarked: isFavourite,
         };
+        // console.log('Station details fetched successfully:', response);
+        // console.log("Connectors:", response.chargers[0].connector_types);
 
         res.status(200).json({
             success: true,

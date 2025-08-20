@@ -6,7 +6,6 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const app = express();
-
 // Connect to DB
 connectDB();
 
@@ -30,6 +29,7 @@ const partneredChargingStationRoutes = require('./routes/partneredChargingStatio
 const adminRoutes = require('./routes/adminRoute');
 // const commonRoutes = require('./routes/commonRoute');
 const authRoutes = require('./routes/authRoute');
+const reportsRoutes = require('./routes/reportsRoute');
 
 // const adminRoutes = require('./routes/adminRoutes');
 // const evOwnerRoutes = require('./routes/evOwnerRoutes');
@@ -41,6 +41,7 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/common', commonRoutes);
 app.use('/api/stations', partneredChargingStationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.use('/api/auth', authRoutes);
 // app.use('/api/admin', adminRoutes);
