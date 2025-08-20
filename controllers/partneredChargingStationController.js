@@ -110,7 +110,11 @@ const getRequestedStations = asyncHandler(async (req, res) => {
         const stations = await PartneredChargingStation.find({ station_owner_id: stationOwnerID })
             .populate('station_owner_id', 'name email')
             .populate('district', 'name')
-            .populate('chargers.connector_types', 'type_name')
+            .populate({
+                path: 'chargers.connector_types.connector',
+                select: 'type_name',
+                model: 'connector'
+            })
             .lean();
 
         if (!stations || stations.length === 0) {
@@ -157,14 +161,25 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     ...charger
                 };
 
+                const connectors = Array.isArray(safeCharger.connector_types)
+                    ? safeCharger.connector_types
+                        .filter(ct => ct?.connector) // Filter out null connectors
+                        .map(ct => {
+                            // Check if connector is populated (object) or just ID (string)
+                            if (typeof ct.connector === 'object' && ct.connector.type_name) {
+                                return ct.connector.type_name;
+                            }
+                            return 'Unknown';
+                        })
+                    : [];
+
+
                 return {
                     name: safeCharger.charger_name,
                     powerType: safeCharger.power_type,
                     maxPower: safeCharger.max_power_output,
                     status: safeCharger.charger_status,
-                    connectors: Array.isArray(safeCharger.connector_types)
-                        ? safeCharger.connector_types.map(ct => ct?.type_name || 'Unknown').filter(Boolean)
-                        : []
+                    connectors: connectors.filter(Boolean)
                 };
             });
 
