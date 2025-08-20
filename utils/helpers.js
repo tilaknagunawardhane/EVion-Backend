@@ -29,7 +29,13 @@ const getVehiclesByOwner = async (owner_id) => {
     if(!mongoose.Types.ObjectId.isValid(owner_id)){
         throw new Error('Invalid owner ID');
     }
-    const ownedVehicles = await EvOwner.findById(owner_id).select('vehicles');
+    const ownedVehicles = await EvOwner.findById(owner_id).select('vehicles')
+        .populate('vehicles.make', 'make')        // populate vehiclemake
+        .populate('vehicles.model', 'model')            // populate vehiclemodel
+        .populate('vehicles.color', 'name hex')        // populate vehiclecolor
+        .populate('vehicles.connector_type_AC', 'type_name current_type image')
+        .populate('vehicles.connector_type_DC', 'type_name current_type image')
+        .lean();
 
     if(!ownedVehicles){
         throw new Error('No owner');
