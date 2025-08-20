@@ -169,6 +169,11 @@ const evOwnerSchema = new mongoose.Schema({
     },
     otp: otpSchema,
     vehicles: [vehicleSchema],
+    favourite_stations: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'partneredChargingStation'
+    }],
+
 }, {
     timestamps: true
 });
