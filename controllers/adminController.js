@@ -39,8 +39,7 @@ const getAdminRequests = asyncHandler(async (req, res) => {
             // Create a request entry for each relevant charger
             relevantChargers.forEach(charger => {
 
-                const chargerId = charger._id ? charger._id.toString() : 
-                                `${station._id}-${Math.random().toString(36).substr(2, 9)}`;
+                const chargerId = charger._id;
                 
                 const connectorTypes = charger.connector_types?.map(ct => {
                     // With the new populate, ct.connector will be populated with type_name
@@ -190,15 +189,6 @@ const getRequestDetails = asyncHandler(async (req, res) => {
             });
         }
 
-        // Find the specific charger
-        const charger = station.chargers.find(c => c._id.toString() === id);
-        if (!charger) {
-            return res.status(404).json({
-                success: false,
-                message: 'Charger not found'
-            });
-        }
-
         // Categorize chargers
         const newChargers = station.chargers.filter(c => 
             ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
@@ -235,7 +225,6 @@ const getRequestDetails = asyncHandler(async (req, res) => {
         const response = {
             id: station._id.toString(),
             title: 'Charger Request Details',
-            chargerId: charger._id.toString(),
             stationStatus,
             stationName: station.station_name,
             address: station.address,
@@ -251,11 +240,7 @@ const getRequestDetails = asyncHandler(async (req, res) => {
                 price: c.price,
                 status: c.charger_status,
                 rejectionReason: c.rejection_reason,
-                // connectors: c.connector_types.join(', ') || 'N/A',
                 connectors: extractConnectorNames(c.connector_types),
-                // connectors: c.connector_types?.map(ct => 
-                //     ct.connector?.type_name || 'Unknown'
-                // ).filter(Boolean) || [],
                 createdAt: c.createdAt
             })),
             existingChargers: existingChargers.map(c => ({
@@ -266,10 +251,6 @@ const getRequestDetails = asyncHandler(async (req, res) => {
                 price: c.price,
                 status: c.charger_status,
                 connectors: extractConnectorNames(c.connector_types),
-                // connectors: c.connector_types.join(', ') || 'N/A',
-                // connectors: c.connector_types?.map(ct => 
-                //     ct.connector?.type_name || 'Unknown'
-                // ).filter(Boolean) || [],
                 createdAt: c.createdAt
             }))
         };
@@ -396,6 +377,14 @@ const updateRequestStatus = asyncHandler(async (req, res) => {
             });
         }
 
+        // Validate reason for decline action
+        if (action === 'decline' && (!reason || typeof reason !== 'string' || reason.trim() === '')) {
+            return res.status(400).json({
+                success: false,
+                message: 'Reason is required for declining a request'
+            });
+        }
+
         let request;
         
         // Check if it's a charger ID or station ID
@@ -452,6 +441,13 @@ const updateRequestStatus = asyncHandler(async (req, res) => {
                         });
                     }
                     charger.charger_status = 'open';
+                    const otherChargers = request.chargers.filter(c => c._id.toString() !== chargerId);
+                    const allOtherChargersPending = otherChargers.every(c =>
+                        ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+                    );
+                    if (allOtherChargersPending && request.station_status !== 'open') {
+                        request.station_status = 'open';
+                    }
                     break;
 
                 default:
