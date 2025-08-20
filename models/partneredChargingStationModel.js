@@ -111,7 +111,9 @@ const partneredChargingStationSchema = new mongoose.Schema({
     chargers: [chargerSchema],
     ratings: [ratingSchema]
 },
-    { timestamps: true });
+    { 
+        _id: true,
+        timestamps: true });
 
 const PartneredChargingStation = mongoose.model('partneredChargingStation', partneredChargingStationSchema);
 module.exports = PartneredChargingStation;
