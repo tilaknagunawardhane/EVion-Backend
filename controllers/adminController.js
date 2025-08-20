@@ -5,81 +5,80 @@ const StationOwner = require('../models/stationOwnerModel');
 const getAdminRequests = asyncHandler(async (req, res) => {
     try {
         // 1. Fetch all stations with populated data
-        const allStations = await PartneredChargingStation.find()
+        const allStations = await PartneredChargingStation.find({
+            'chargers.charger_status': {
+                $in: ['processing', 'to_be_installed', 'rejected']
+            }
+        })
             .populate('station_owner_id', 'name email phone')
             .populate('district', 'name')
-            .populate('chargers.connector_types', 'name')
+            .populate({
+                path: 'chargers',
+                populate: {
+                    path: 'connector_types.connector',
+                    select: 'type_name',
+                    model: 'connector'
+                }
+            })
             .lean();
 
-        // 2. First get all unique owner IDs
-        const ownerIds = [...new Set(allStations
-            .map(s => s.station_owner_id?._id?.toString())
-            .filter(Boolean))];
+        // 2. Process each charger with the specified statuses
+        const chargerRequests = [];
+        
+        allStations.forEach(station => {
+            // Filter chargers with the statuses we care about
+            const relevantChargers = (station.chargers || []).filter(charger => 
+                charger && ['processing', 'to_be_installed', 'rejected'].includes(charger.charger_status)
+            );
 
-        // 3. Fetch all stations for each owner to determine new/existing status
-        const ownerStatuses = {};
-        await Promise.all(ownerIds.map(async ownerId => {
-            const ownerStations = await PartneredChargingStation.find({
-                station_owner_id: ownerId
-            }).lean();
+            // Determine if owner is new user
+            const isNewUser = (station.chargers || []).every(charger => 
+                charger && ['processing', 'to_be_installed', 'rejected'].includes(charger.charger_status)
+            );
 
-            const isNewUser = ownerStations.every(s => s.station_status === 'in-progress');
-            ownerStatuses[ownerId] = isNewUser;
-        }));
+            // Create a request entry for each relevant charger
+            relevantChargers.forEach(charger => {
 
-        // 4. Process each station with the correct user type
-        const processedRequests = allStations.map(station => {
-            const ownerId = station.station_owner_id?._id?.toString();
-            const isNewUser = ownerId ? ownerStatuses[ownerId] : false;
+                const chargerId = charger._id ? charger._id.toString() : 
+                                `${station._id}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                const connectorTypes = charger.connector_types?.map(ct => {
+                    // With the new populate, ct.connector will be populated with type_name
+                    if (ct?.connector && typeof ct.connector === 'object') {
+                        return ct.connector.type_name || 'N/A';
+                    }
+                    return 'N/A';
+                }).filter(Boolean) || [];
+                
+                const uniqueConnectorTypes = [...new Set(connectorTypes)];
 
-            // Determine the tab (stations or connectors)
-            // Updated logic: station if in-progress OR both statuses are rejected
-            const type = (station.station_status === 'in-progress' || 
-                         (station.station_status === 'rejected' && station.request_status === 'rejected')) 
-                         ? 'station' : 'connector';
-
-            // Determine the status section (NEW, IN-PROGRESS, REJECTED)
-            let status;
-            if (station.request_status === 'processing') status = 'NEW';
-            else if (station.request_status === 'rejected') status = 'REJECTED';
-            else status = 'IN-PROGRESS'; // approved or to-be-installed
-
-            // Safely handle chargers data
-            const chargersCount = station.chargers?.length || 0;
-            const connectorTypes = station.chargers?.flatMap(charger =>
-                charger.connector_types?.map(ct => ct?.name).filter(Boolean) || []);
-            const uniqueConnectorTypes = [...new Set(connectorTypes)];
-
-            return {
-                id: station._id.toString(),
-                type,
-                userName: station.station_owner_id?.name || 'Unknown',
-                userType: isNewUser ? 'New User' : 'Existing User',
-                status,
-                stationName: station.station_name || 'Unnamed Station',
-                stationAddress: station.address || 'Address not provided',
-                district: station.district?.name || 'Unknown',
-                connectorType: uniqueConnectorTypes.join(', ') || 'N/A',
-                chargersRequested: chargersCount.toString(),
-                date: station.createdAt?.toLocaleString('en-US', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }) || 'Date not available'
-            };
+                chargerRequests.push({
+                    id: chargerId,
+                    stationId: station._id.toString(),
+                    userName: station.station_owner_id?.name || 'Unknown',
+                    stationType: isNewUser ? 'New Station' : 'Existing Station',
+                    status: charger.charger_status.toUpperCase(),
+                    stationName: station.station_name || 'Unnamed Station',
+                    stationAddress: station.address || 'Address not provided',
+                    powerType: charger.power_type || 'Unknown',
+                    power: charger.max_power_output || 'N/A',
+                    district: station.district?.name || 'Unknown',
+                    connectorType: uniqueConnectorTypes.join(', ') || 'N/A',
+                    chargersRequested: '1', // Each card represents one charger
+                    date: charger.createdAt?.toLocaleString('en-US', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) || 'Date not available',
+                    chargerData: charger // Include full charger data if needed
+                });
+            });
         });
-
-        // Separate into stations and connectors
-        const stationRequests = processedRequests.filter(r => r.type === 'station');
-        const connectorRequests = processedRequests.filter(r => r.type === 'connector');
 
         res.status(200).json({
             success: true,
-            data: {
-                stationRequests,
-                connectorRequests
-            }
+            data: chargerRequests
         });
 
     } catch (error) {
