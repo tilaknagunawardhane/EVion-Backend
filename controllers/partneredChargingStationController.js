@@ -178,6 +178,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     name: safeCharger.charger_name,
                     powerType: safeCharger.power_type,
                     maxPower: safeCharger.max_power_output,
+                    price: safeCharger.price || 'N/A',
                     status: safeCharger.charger_status,
                     connectors: connectors.filter(Boolean)
                 };
