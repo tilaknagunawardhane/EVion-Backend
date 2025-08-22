@@ -293,8 +293,100 @@ const getBookingDetails = asyncHandler(async (req, res) => {
     }
 });
 
+const submitBookingReport = asyncHandler(async (req, res) => {
+    try {
+        const { userId, bookingId, category, description, attachments = [] } = req.body;
+        if (!userId || !bookingId || !category || !description) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID, Booking ID, Category, and Description are required'
+            });
+        }
+
+        const user = await EvOwner.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const booking = await Booking2.findOne({
+            _id: bookingId,
+            ev_user_id: userId
+        });
+
+        const trimmedDescription = description.trim();
+        if (trimmedDescription.length > 1000) {
+            return res.status(400).json({
+                success: false,
+                message: 'Description cannot exceed 1000 characters'
+            });
+        }
+
+        // Validate attachments
+        if (attachments.length > 5) {
+            return res.status(400).json({
+                success: false,
+                message: 'Maximum 5 attachments allowed'
+            });
+        }
+
+        const existingReport  = await BookingReport.findOne({
+            user_id: userId,
+            booking_id: bookingId
+        })
+
+        if(existingReport){
+            return res.status(400).json({
+                success: false,
+                message: 'You have already submitted a report for this booking'
+            });
+        }
+
+        const report = new BookingReport({
+            user_id: userId,
+            booking_id: bookingId,
+            category,
+            description: trimmedDescription,
+            attachments: attachments,
+            status: 'under-review'
+        });
+
+        await report.save();
+
+        const populatedReport = await BookingReport.findById(report._id)
+            .populate({
+                path: 'user_id',
+                model: 'EvOwner',
+                select: 'name email'
+            })
+            .populate({
+                path: 'booking_id',
+                model: 'booking2',
+                select: 'start_time end_time status cost'
+            })
+            .lean();
+
+        res.status(201).json({
+            success: true,
+            message: 'Booking report submitted successfully',
+            data: populatedReport
+        });
+
+    } catch (error) {
+        console.error('Error submitting booking report:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while submitting booking report',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+})
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
-    getBookingDetails
+    getBookingDetails,
+    submitBookingReport
 }
