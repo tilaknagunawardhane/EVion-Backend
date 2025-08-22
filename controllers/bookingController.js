@@ -3,6 +3,7 @@ const asyncHandler = require('express-async-handler');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const duration = require('dayjs/plugin/duration');
+const timezone = require("dayjs/plugin/timezone");
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation, getConnectorById, getVehiclesByOwner } = require('../utils/helpers');
@@ -12,6 +13,7 @@ const slot_size = process.env.SLOT_SIZE;
 // Extend dayjs with UTC plugin
 dayjs.extend(utc);
 dayjs.extend(duration);
+dayjs.extend(timezone);
 
 function formatDuration(minutes) {
   const dur = dayjs.duration(minutes, 'minutes');
@@ -25,26 +27,31 @@ function formatDuration(minutes) {
 }
 
 const addBooking = asyncHandler(async (req, res) => {
-    let {ev_user_id, vehicle_id, booking_date_time, no_of_slots, charger_id, plug_type} = req.body;
+    let {ev_user_id, vehicle_id, charging_station_id, booking_date_time, no_of_slots, charger_id, connector_type_id} = req.body;
     console.log(req.body);
 
-    if(!booking_date_time || !no_of_slots || !charger_id || !plug_type){
+    if(!ev_user_id || !vehicle_id || !charging_station_id || !booking_date_time || !no_of_slots || !charger_id || !connector_type_id){
         res.status(400);      
         throw new Error('Please fill in all booking fields');
     }
-    
-    booking_date_time = dayjs(booking_date_time).utc(); //with utc(), string/date -> date in Z   
-    console.log('booking_date_time: ',booking_date_time.format());
 
+    // console.log('booking_date_time: ',booking_date_time);
+    // console.log('timezone: ',new Date().getTimezoneOffset());
+
+    // Force it to IST (+5:30)
+    booking_date_time = dayjs(booking_date_time).utcOffset(330, true); // 330 minutes = 5.5 hours
+    console.log('booking_date_time: ',booking_date_time.format());
+    
     if (booking_date_time.isValid()){
 
-        booking_date = booking_date_time.startOf('day'); //date & time UTC -> date with midnight UTC
-        start_time = booking_date_time; //in UTC 
-        end_time = booking_date_time.add(slot_size*no_of_slots, 'minute'); //in UTC
+        booking_date = booking_date_time.startOf('day'); // start time of the day (midnight) in IST
+        start_time = booking_date_time;  //in IST
+        end_time = booking_date_time.add(slot_size*no_of_slots, 'minute'); // in IST
         
         console.log('booking_date: ',booking_date.format());
         console.log('start_time: ',start_time.format());
         console.log('end_time: ',end_time.format());
+
     }
     else{
         console.log('Invalid Date!!');
@@ -55,31 +62,35 @@ const addBooking = asyncHandler(async (req, res) => {
     const booking = await Booking.create({
         ev_user_id,
         vehicle_id,
+        charging_station_id: '687d2ec70e0c0b8ef0b4186c',
+        charger_id,
+        connector_type_id,
         booking_date,
         start_time,
         end_time,
         no_of_slots,
-        charger_id,
-        plug_type,
         status: 'upcoming'
     });
 
     if (booking){
         res.status(201).json({ 
             _id: booking._id,
-            booking_date_time: booking.booking_date_time,
+            ev_user_id: booking.ev_user_id,
+            vehicle_id: booking.vehicle_id,
+            charging_station_id: booking.charging_station_id,
+            charger_id: booking.charger_id,
+            connector_type_id: booking.connector_type_id,
             booking_date: booking.booking_date,
             start_time: booking.start_time,
             end_time: booking.end_time,
             no_of_slots: booking.no_of_slots,
-            charger_id: booking.charger_id,
-            plug_type: booking.plug_type,
             status: booking.status
         });
     }else {
         res.status(400);
         throw new Error('Invalid');
     }
+
 });
 
 

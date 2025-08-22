@@ -1,33 +1,33 @@
 const mongoose = require('mongoose');
 
 const bookingSchema = new mongoose.Schema({
-    ev_user_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'evowners',
-        required: true
-    },
     vehicle_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'vehicles',
+        // ref: 'EvOwner.vehicles',
+        required: true
+    },
+    ev_user_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'EvOwner',
         required: true
     },
     charging_station_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'partneredChargingStations',
+        ref: 'partneredChargingStation',
         required: true
     },
     charger_id: {
-        type: Number, //change this to object id type
-        ref: 'Chargers',
+        type: mongoose.Schema.Types.ObjectId, //change this to object id type
+        ref: 'partneredChargingStation.chargers',
         required: true
     },
     connector_type_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'connectors',
+        ref: 'partneredChargingStation.chargers.connector_types',
         required: true
     },
     booking_date: {
-        type: Date, // Date only, 2000-05-16T00:00:00Z (midnight)
+        type: Date, // Date only, 2000-05-16T00:00:00 (midnight) in IST
         required: true,
         index: true 
     },
