@@ -19,7 +19,7 @@ const generateTokens = (user, userType) => {
         email: user.email,
         userType,
         role: user.role,
-    }, '15m'); // 15 minutes expiration
+    }, '5d'); // 15 minutes expiration
 
     const refreshToken = generateToken({
         id: user._id,
