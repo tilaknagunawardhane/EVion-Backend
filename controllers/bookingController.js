@@ -335,20 +335,21 @@ const getOwnedVehicles = asyncHandler(async (req, res) => {
     let ownedVehicles = ownedVehiclesDoc?.toObject?.() || ownedVehiclesDoc;
 
     console.log('owned vehicles: ', ownedVehicles);
+    console.log('owned make: ', ownedVehicles.vehicles);
 
-    ownedVehicles = ownedVehicles.vehicles.map(vehicle => ({
-        id: vehicle._id,
-        year: vehicle.manufactured_year,
-        battery: vehicle.battery_capacity,
-        max_power_DC: vehicle.max_power_DC,
-        max_power_AC: vehicle.max_power_AC,
-        image: vehicle.image,
-        ports: [
-            vehicle.connector_type_AC,
-            vehicle.connector_type_DC
-        ]
+    // ownedVehicles = ownedVehicles.vehicles.map(vehicle => ({
+    //     id: vehicle._id,
+    //     year: vehicle.manufactured_year,
+    //     battery: vehicle.battery_capacity,
+    //     max_power_DC: vehicle.max_power_DC,
+    //     max_power_AC: vehicle.max_power_AC,
+    //     image: vehicle.image,
+    //     ports: [
+    //         vehicle.connector_type_AC,
+    //         vehicle.connector_type_DC
+    //     ]
 
-    }))
+    // }))
 
     console.log('owned vehicles: ', ownedVehicles);
     return res.status(200).json(ownedVehicles);
