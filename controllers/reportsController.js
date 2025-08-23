@@ -645,7 +645,7 @@ const getAllReports = asyncHandler(async (req, res) => {
 const getReportDetails = asyncHandler(async (req, res) => {
     try {
         const { type, id } = req.params;
-        console.log('Received type:', type, 'and id:', id);
+        // console.log('Received type:', type, 'and id:', id);
         if (!type || !id) {
             return res.status(400).json({
                 success: false,
@@ -790,11 +790,128 @@ const getReportDetails = asyncHandler(async (req, res) => {
     }
 })
 
+const saveReportAction = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const { action, status, rejected_reason, refund_amount, resolved_by } = req.body;
+        // const resolved_by = req.user.id;
+
+        // console.log("resoled_by:", resolved_by);
+        // console.log("type:", type);
+        // console.log("id:", id);
+
+        if (!action && status !== 'rejected') {
+            return res.status(400).json({
+                success: false,
+                message: 'Action is required for resolution'
+            });
+        }
+        if (status === 'rejected' && !rejected_reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'Rejection reason is required when rejecting a report'
+            });
+        }
+
+        if (refund_amount && (isNaN(refund_amount) || refund_amount < 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Refund amount must be a positive number'
+            });
+        }
+
+        const updateData = {
+            status,
+            action: action || (status === 'rejected' ? 'Report rejected' : action),
+            resolved_by,
+            resolved_at: new Date(),
+            ...(status === 'rejected' && { rejected_reason }),
+            ...(refund_amount !== undefined && {
+                refund_amount: parseFloat(refund_amount),
+                is_refunded: refund_amount > 0
+            })
+        };
+        let updatedReport;
+        let reportModel;
+
+        switch (type) {
+            case 'stations':
+                reportModel = StationReport;
+                break;
+            case 'chargers':
+                reportModel = ChargerReport;
+                break;
+            case 'bookings':
+                reportModel = BookingReport;
+                break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type. Use stations, chargers, or bookings'
+                });
+        }
+        const existingReport = await reportModel.findById(id);
+        if (!existingReport) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        if (existingReport.status !== 'under-review') {
+            return res.status(400).json({
+                success: false,
+                message: 'Report has already been processed'
+            });
+        }
+        updatedReport = await reportModel.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        ).populate('user_id', 'name email')
+            .populate('resolved_by', 'name email');
+
+        if (type === 'bookings') {
+            await updatedReport.populate({
+                path: 'booking_id',
+                populate: [
+                    {
+                        path: 'charging_station_id',
+                        select: 'station_name address city'
+                    }
+                ]
+            });
+        } else {
+            await updatedReport.populate('station_id', 'station_name address city');
+        }
+        if (!updatedReport) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Report ${status} successfully`,
+            data: updatedReport
+        });
+    } catch (error) {
+        console.error('Error saving report action:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while saving report action',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
     getBookingDetails,
     submitBookingReport,
     getAllReports,
-    getReportDetails
+    getReportDetails,
+    saveReportAction
 }
