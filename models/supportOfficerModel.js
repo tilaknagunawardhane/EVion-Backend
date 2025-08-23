@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { applyTimestamps } = require('./evOwnerModel');
 
-const adminSchema = new mongoose.Schema({
+const supportOfficer = new mongoose.Schema({
     email: {
         type: String,
         required: true,
@@ -14,9 +14,8 @@ const adminSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        default: 'admin',
-        // enum: ['admin', 'supportofficer'],
+        default: 'supportofficer',
     },
 }, { timestamps: true });
 
-module.exports = mongoose.model('Admin', adminSchema);
+module.exports = mongoose.model('SupportOfficer', supportOfficer);
