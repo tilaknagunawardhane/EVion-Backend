@@ -332,12 +332,12 @@ const submitBookingReport = asyncHandler(async (req, res) => {
             });
         }
 
-        const existingReport  = await BookingReport.findOne({
+        const existingReport = await BookingReport.findOne({
             user_id: userId,
             booking_id: bookingId
         })
 
-        if(existingReport){
+        if (existingReport) {
             return res.status(400).json({
                 success: false,
                 message: 'You have already submitted a report for this booking'
@@ -384,9 +384,600 @@ const submitBookingReport = asyncHandler(async (req, res) => {
     }
 })
 
+const getAllReports = asyncHandler(async (req, res) => {
+    try {
+        const { type, status, page = 1, limit = 10, search } = req.query;
+        let reports = [];
+        let totalCount = 0;
+
+        const userPopulate = { path: 'user_id', select: 'name email' };
+        const stationPopulate = { path: 'station_id', select: 'station_name address city' };
+
+        switch (type) {
+            case 'stations':
+                let stationQuery = {};
+
+                if (status && status !== 'all') {
+                    stationQuery.status = status;
+                }
+                if (search) {
+                    stationQuery.$or = [
+                        { category: { $regex: search, $options: 'i' } },
+                        { description: { $regex: search, $options: 'i' } }
+                    ];
+                }
+
+                [reports, totalCount] = await Promise.all([
+                    StationReport.find(stationQuery)
+                        .populate(userPopulate)
+                        .populate(stationPopulate)
+                        .sort({ createdAt: -1 })
+                        .limit(limit * 1)
+                        .skip((page - 1) * limit)
+                        .lean(),
+                    StationReport.countDocuments(stationQuery)
+                ]);
+                break;
+
+            case 'chargers':
+                let chargerQuery = {};
+                if (status && status !== 'all') {
+                    chargerQuery.status = status;
+                }
+                if (search) {
+                    chargerQuery.$or = [
+                        { category: { $regex: search, $options: 'i' } },
+                        { description: { $regex: search, $options: 'i' } }
+                    ];
+                }
+
+                reports = await ChargerReport.find(chargerQuery)
+                    .populate(userPopulate)
+                    .populate(stationPopulate)
+                    .sort({ createdAt: -1 })
+                    .limit(limit * 1)
+                    .skip((page - 1) * limit)
+                    .lean();
+
+                totalCount = await ChargerReport.countDocuments(chargerQuery);
+                break;
+
+            case 'bookings':
+                let bookingQuery = {};
+                if (status && status !== 'all') {
+                    bookingQuery.status = status;
+                }
+                if (search) {
+                    bookingQuery.$or = [
+                        { category: { $regex: search, $options: 'i' } },
+                        { description: { $regex: search, $options: 'i' } }
+                    ];
+                }
+
+                reports = await BookingReport.find(bookingQuery)
+                    .populate(userPopulate)
+                    .populate({
+                        path: 'booking_id',
+                        model: 'booking2',
+                        populate: [
+                            {
+                                path: 'ev_user_id',
+                                select: 'name email contact_number'
+                            },
+                            {
+                                path: 'charging_station_id',
+                                select: 'station_name address city station_status'
+                            }
+                        ]
+                    })
+                    .sort({ createdAt: -1 })
+                    .limit(limit * 1)
+                    .skip((page - 1) * limit)
+                    .lean();
+
+                totalCount = await BookingReport.countDocuments(bookingQuery);
+                break;
+
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type. Use stations, chargers, or bookings'
+                });
+        }
+
+        // Process reports to get additional data (especially for bookings)
+        const processedReports = await Promise.all(
+            reports.map(async (report) => {
+                const baseReport = {
+                    id: report._id,
+                    reportedOn: report.createdAt,
+                    reportedBy: report.user_id?.name || 'Unknown',
+                    reportCategory: report.category,
+                    status: report.status,
+                    description: report.description,
+                    attachments: report.attachments || []
+                };
+
+                switch (type) {
+                    case 'stations':
+                        return {
+                            ...baseReport,
+                            stationName: report.station_id?.station_name || 'Unknown Station',
+                            stationAddress: report.station_id?.address || '',
+                            stationCity: report.station_id?.city || ''
+                        };
+
+                    case 'chargers':
+                        // Get charger details from station
+                        if (report.station_id && report.charger_id) {
+                            const station = await PartneredChargingStation.findById(report.station_id._id)
+                                .select('chargers')
+                                .lean();
+
+                            const charger = station?.chargers.find(c => c._id.toString() === report.charger_id.toString());
+
+                            return {
+                                ...baseReport,
+                                stationName: report.station_id?.station_name || 'Unknown Station',
+                                stationAddress: report.station_id?.address || '',
+                                stationCity: report.station_id?.city || '',
+                                chargerName: charger?.charger_name || 'Unknown Charger',
+                                powerType: charger?.power_type || ''
+                            };
+                        }
+                        return {
+                            ...baseReport,
+                            stationName: report.station_id?.station_name || 'Unknown Station',
+                            stationAddress: report.station_id?.address || '',
+                            stationCity: report.station_id?.city || '',
+                            chargerName: 'Unknown Charger',
+                            powerType: ''
+                        };
+
+                    case 'bookings':
+                        if (!report.booking_id) {
+                            return {
+                                ...baseReport,
+                                bookingId: 'Unknown Booking',
+                                stationName: 'Unknown Station',
+                                bookingDate: '',
+                                bookingTime: ''
+                            };
+                        }
+
+                        const booking = report.booking_id;
+
+                        // Get vehicle data using the same approach as getBookingDetails
+                        let vehicleData = {};
+                        if (booking.ev_user_id && booking.vehicle_id) {
+                            const user = await EvOwner.findById(booking.ev_user_id._id)
+                                .select('vehicles')
+                                .lean();
+
+                            if (user) {
+                                const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+                                if (vehicle) {
+                                    vehicleData = {
+                                        make: vehicle.make_info?.make || 'Unknown',
+                                        model: vehicle.model_info?.model || 'Unknown',
+                                        manufactured_year: vehicle.manufactured_year,
+                                        battery_capacity: vehicle.battery_capacity,
+                                        color: vehicle.color_info?.color || 'N/A',
+                                        vehicle_type: vehicle.vehicle_type,
+                                        connector_type_AC: vehicle.connector_type_AC_info?.type_name || 'N/A',
+                                        connector_type_DC: vehicle.connector_type_DC_info?.type_name || 'N/A'
+                                    };
+                                }
+                            }
+                        }
+
+                        // Get charger and connector details
+                        let chargerData = {};
+                        let connectorData = {};
+                        if (booking.charging_station_id && booking.charger_id && booking.connector_type_id) {
+                            const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+                                .select('chargers')
+                                .lean();
+
+                            if (station) {
+                                const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+                                if (charger) {
+                                    chargerData = {
+                                        charger_name: charger.charger_name,
+                                        power_type: charger.power_type,
+                                        max_power_output: charger.max_power_output
+                                    };
+
+                                    const connector = charger.connector_types.find(ct => ct._id.toString() === booking.connector_type_id.toString());
+                                    if (connector) {
+                                        const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                            .select('type_name current_type')
+                                            .lean();
+
+                                        connectorData = {
+                                            type_name: connectorDetails?.type_name || 'Unknown',
+                                            current_type: connectorDetails?.current_type || 'Unknown'
+                                        };
+                                    }
+                                }
+                            }
+                        }
+
+                        return {
+                            ...baseReport,
+                            bookingId: booking._id,
+                            stationName: booking.charging_station_id?.station_name || 'Unknown Station',
+                            stationAddress: booking.charging_station_id?.address || '',
+                            stationCity: booking.charging_station_id?.city || '',
+                            bookingDate: booking.booking_date ? new Date(booking.booking_date).toLocaleDateString() : '',
+                            bookingTime: booking.start_time ? new Date(booking.start_time).toLocaleTimeString() : '',
+                            vehicleDetails: vehicleData,
+                            chargerDetails: chargerData,
+                            connectorDetails: connectorData
+                        };
+
+                    default:
+                        return baseReport;
+                }
+            })
+        );
+
+        res.status(200).json({
+            success: true,
+            data: processedReports,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching reports:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching reports',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const getReportDetails = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        // console.log('Received type:', type, 'and id:', id);
+        if (!type || !id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Report type and ID are required'
+            });
+        }
+
+        let report;
+        switch (type) {
+            case 'stations':
+                report = await StationReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+
+                break;
+            case 'chargers':
+                report = await ChargerReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+
+                if (report && report.station_id) {
+                    const station = await PartneredChargingStation.findById(report.station_id._id)
+                        .select('chargers')
+                        .lean();
+
+                    if (station) {
+                        const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
+                        report.charger_details = charger || {};
+
+                        if (charger) {
+                            const connector = charger.connector_types.find(ct => ct._id.toString() === report.connector_id.toString());
+                            if (connector) {
+                                const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                    .select('type_name current_type')
+                                    .lean();
+
+                                report.connector_details = connectorDetails || {};
+                            }
+                        }
+                    }
+                }
+                break;
+            case 'bookings':
+                report = await BookingReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('resolved_by', 'name email')
+                    .populate({
+                        path: 'booking_id',
+                        model: 'booking2',
+                        populate: [
+                            {
+                                path: 'charging_station_id',
+                                select: 'station_name address city district station_status'
+                            },
+                            {
+                                path: 'ev_user_id',
+                                select: 'name email contact_number'
+                            }
+                        ]
+                    })
+                    .lean();
+
+                if (report && report.booking_id) {
+                    const booking = report.booking_id;
+
+                    // Get vehicle data
+                    const user = await EvOwner.findById(booking.ev_user_id._id)
+                        .select('vehicles')
+                        .lean();
+
+                    if (user) {
+                        const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+                        report.vehicle_details = vehicle ? {
+                            make: vehicle.make_info?.make || 'Unknown',
+                            model: vehicle.model_info?.model || 'Unknown',
+                            manufactured_year: vehicle.manufactured_year,
+                            battery_capacity: vehicle.battery_capacity,
+                            color: vehicle.color_info?.color || 'N/A',
+                            vehicle_type: vehicle.vehicle_type,
+                            connector_type_AC: vehicle.connector_type_AC_info?.type_name || 'N/A',
+                            connector_type_DC: vehicle.connector_type_DC_info?.type_name || 'N/A'
+                        } : {};
+                    }
+
+                    if (booking.charging_station_id) {
+                        const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+                            .select('chargers')
+                            .lean();
+
+                        if (station) {
+                            const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+                            report.charger_details = charger ? {
+                                charger_name: charger.charger_name,
+                                power_type: charger.power_type,
+                                max_power_output: charger.max_power_output,
+                                price: charger.price
+                            } : {};
+
+                            if (charger) {
+                                const connector = charger.connector_types.find(ct => ct._id.toString() === booking.connector_type_id.toString());
+                                if (connector) {
+                                    const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                        .select('type_name current_type image')
+                                        .lean();
+                                    report.connector_details = connectorDetails || {};
+                                }
+
+                            }
+                        }
+                    }
+                }
+                break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type'
+                });
+        }
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+        res.status(200).json({
+            success: true,
+            data: report
+        });
+
+    } catch (error) {
+        console.error('Error fetching report details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching report details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+})
+
+const saveReportAction = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const { action, status, rejected_reason, refund_amount, resolved_by } = req.body;
+        // const resolved_by = req.user.id;
+
+        // console.log("resoled_by:", resolved_by);
+        // console.log("type:", type);
+        // console.log("id:", id);
+
+        if (!action && status !== 'rejected') {
+            return res.status(400).json({
+                success: false,
+                message: 'Action is required for resolution'
+            });
+        }
+        if (status === 'rejected' && !rejected_reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'Rejection reason is required when rejecting a report'
+            });
+        }
+
+        if (refund_amount && (isNaN(refund_amount) || refund_amount < 0)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Refund amount must be a positive number'
+            });
+        }
+
+        const updateData = {
+            status,
+            action: action || (status === 'rejected' ? 'Report rejected' : action),
+            resolved_by,
+            resolved_at: new Date(),
+            ...(status === 'rejected' && { rejected_reason }),
+            ...(refund_amount !== undefined && {
+                refund_amount: parseFloat(refund_amount),
+                is_refunded: refund_amount > 0
+            })
+        };
+        let updatedReport;
+        let reportModel;
+
+        switch (type) {
+            case 'stations':
+                reportModel = StationReport;
+                break;
+            case 'chargers':
+                reportModel = ChargerReport;
+                break;
+            case 'bookings':
+                reportModel = BookingReport;
+                break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type. Use stations, chargers, or bookings'
+                });
+        }
+        const existingReport = await reportModel.findById(id);
+        if (!existingReport) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        if (existingReport.status !== 'under-review') {
+            return res.status(400).json({
+                success: false,
+                message: 'Report has already been processed'
+            });
+        }
+        updatedReport = await reportModel.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        ).populate('user_id', 'name email')
+            .populate('resolved_by', 'name email');
+
+        if (type === 'bookings') {
+            await updatedReport.populate({
+                path: 'booking_id',
+                populate: [
+                    {
+                        path: 'charging_station_id',
+                        select: 'station_name address city'
+                    }
+                ]
+            });
+        } else {
+            await updatedReport.populate('station_id', 'station_name address city');
+        }
+        if (!updatedReport) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Report ${status} successfully`,
+            data: updatedReport
+        });
+    } catch (error) {
+        console.error('Error saving report action:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while saving report action',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Add this to your reportController.js
+const updateRefund = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const { refund_amount } = req.body;
+
+        if (type !== 'bookings') {
+            return res.status(400).json({
+                success: false,
+                message: 'Refunds can only be added to booking reports'
+            });
+        }
+
+        if (!refund_amount || isNaN(refund_amount) || refund_amount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid refund amount is required'
+            });
+        }
+
+        const report = await BookingReport.findById(id);
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        if (report.status !== 'resolved') {
+            return res.status(400).json({
+                success: false,
+                message: 'Refunds can only be added to resolved reports'
+            });
+        }
+
+        const updatedReport = await BookingReport.findByIdAndUpdate(
+            id,
+            {
+                refund_amount: parseFloat(refund_amount),
+                is_refunded: refund_amount > 0
+            },
+            { new: true, runValidators: true }
+        ).populate('user_id', 'name email')
+         .populate('resolved_by', 'name email')
+         .populate({
+            path: 'booking_id',
+            populate: [{ path: 'charging_station_id', select: 'station_name address city' }]
+         });
+
+        res.status(200).json({
+            success: true,
+            message: 'Refund updated successfully',
+            data: updatedReport
+        });
+
+    } catch (error) {
+        console.error('Error updating refund:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while updating refund',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
     getBookingDetails,
-    submitBookingReport
+    submitBookingReport,
+    getAllReports,
+    getReportDetails,
+    saveReportAction,
+    updateRefund
 }
