@@ -906,6 +906,71 @@ const saveReportAction = asyncHandler(async (req, res) => {
     }
 });
 
+// Add this to your reportController.js
+const updateRefund = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        const { refund_amount } = req.body;
+
+        if (type !== 'bookings') {
+            return res.status(400).json({
+                success: false,
+                message: 'Refunds can only be added to booking reports'
+            });
+        }
+
+        if (!refund_amount || isNaN(refund_amount) || refund_amount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid refund amount is required'
+            });
+        }
+
+        const report = await BookingReport.findById(id);
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        if (report.status !== 'resolved') {
+            return res.status(400).json({
+                success: false,
+                message: 'Refunds can only be added to resolved reports'
+            });
+        }
+
+        const updatedReport = await BookingReport.findByIdAndUpdate(
+            id,
+            {
+                refund_amount: parseFloat(refund_amount),
+                is_refunded: refund_amount > 0
+            },
+            { new: true, runValidators: true }
+        ).populate('user_id', 'name email')
+         .populate('resolved_by', 'name email')
+         .populate({
+            path: 'booking_id',
+            populate: [{ path: 'charging_station_id', select: 'station_name address city' }]
+         });
+
+        res.status(200).json({
+            success: true,
+            message: 'Refund updated successfully',
+            data: updatedReport
+        });
+
+    } catch (error) {
+        console.error('Error updating refund:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while updating refund',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
@@ -913,5 +978,6 @@ module.exports = {
     submitBookingReport,
     getAllReports,
     getReportDetails,
-    saveReportAction
+    saveReportAction,
+    updateRefund
 }
