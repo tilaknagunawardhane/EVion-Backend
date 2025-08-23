@@ -513,9 +513,9 @@ const getAllReports = asyncHandler(async (req, res) => {
                             const station = await PartneredChargingStation.findById(report.station_id._id)
                                 .select('chargers')
                                 .lean();
-                            
+
                             const charger = station?.chargers.find(c => c._id.toString() === report.charger_id.toString());
-                            
+
                             return {
                                 ...baseReport,
                                 stationName: report.station_id?.station_name || 'Unknown Station',
@@ -546,7 +546,7 @@ const getAllReports = asyncHandler(async (req, res) => {
                         }
 
                         const booking = report.booking_id;
-                        
+
                         // Get vehicle data using the same approach as getBookingDetails
                         let vehicleData = {};
                         if (booking.ev_user_id && booking.vehicle_id) {
@@ -593,7 +593,7 @@ const getAllReports = asyncHandler(async (req, res) => {
                                         const connectorDetails = await ConnectorModel.findById(connector.connector)
                                             .select('type_name current_type')
                                             .lean();
-                                        
+
                                         connectorData = {
                                             type_name: connectorDetails?.type_name || 'Unknown',
                                             current_type: connectorDetails?.current_type || 'Unknown'
@@ -642,10 +642,159 @@ const getAllReports = asyncHandler(async (req, res) => {
     }
 });
 
+const getReportDetails = asyncHandler(async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        console.log('Received type:', type, 'and id:', id);
+        if (!type || !id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Report type and ID are required'
+            });
+        }
+
+        let report;
+        switch (type) {
+            case 'stations':
+                report = await StationReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+
+                break;
+            case 'chargers':
+                report = await ChargerReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+
+                if (report && report.station_id) {
+                    const station = await PartneredChargingStation.findById(report.station_id._id)
+                        .select('chargers')
+                        .lean();
+
+                    if (station) {
+                        const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
+                        report.charger_details = charger || {};
+
+                        if (charger) {
+                            const connector = charger.connector_types.find(ct => ct._id.toString() === report.connector_id.toString());
+                            if (connector) {
+                                const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                    .select('type_name current_type')
+                                    .lean();
+
+                                report.connector_details = connectorDetails || {};
+                            }
+                        }
+                    }
+                }
+                break;
+            case 'bookings':
+                report = await BookingReport.findById(id)
+                    .populate('user_id', 'name email contact_number')
+                    .populate('resolved_by', 'name email')
+                    .populate({
+                        path: 'booking_id',
+                        model: 'booking2',
+                        populate: [
+                            {
+                                path: 'charging_station_id',
+                                select: 'station_name address city district station_status'
+                            },
+                            {
+                                path: 'ev_user_id',
+                                select: 'name email contact_number'
+                            }
+                        ]
+                    })
+                    .lean();
+
+                if (report && report.booking_id) {
+                    const booking = report.booking_id;
+
+                    // Get vehicle data
+                    const user = await EvOwner.findById(booking.ev_user_id._id)
+                        .select('vehicles')
+                        .lean();
+
+                    if (user) {
+                        const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+                        report.vehicle_details = vehicle ? {
+                            make: vehicle.make_info?.make || 'Unknown',
+                            model: vehicle.model_info?.model || 'Unknown',
+                            manufactured_year: vehicle.manufactured_year,
+                            battery_capacity: vehicle.battery_capacity,
+                            color: vehicle.color_info?.color || 'N/A',
+                            vehicle_type: vehicle.vehicle_type,
+                            connector_type_AC: vehicle.connector_type_AC_info?.type_name || 'N/A',
+                            connector_type_DC: vehicle.connector_type_DC_info?.type_name || 'N/A'
+                        } : {};
+                    }
+
+                    if (booking.charging_station_id) {
+                        const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+                            .select('chargers')
+                            .lean();
+
+                        if (station) {
+                            const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+                            report.charger_details = charger ? {
+                                charger_name: charger.charger_name,
+                                power_type: charger.power_type,
+                                max_power_output: charger.max_power_output,
+                                price: charger.price
+                            } : {};
+
+                            if (charger) {
+                                const connector = charger.connector_types.find(ct => ct._id.toString() === booking.connector_type_id.toString());
+                                if (connector) {
+                                    const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                        .select('type_name current_type image')
+                                        .lean();
+                                    report.connector_details = connectorDetails || {};
+                                }
+
+                            }
+                        }
+                    }
+                }
+                break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type'
+                });
+        }
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+        res.status(200).json({
+            success: true,
+            data: report
+        });
+
+    } catch (error) {
+        console.error('Error fetching report details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching report details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+})
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
     getBookingDetails,
     submitBookingReport,
-    getAllReports
+    getAllReports,
+    getReportDetails
 }
