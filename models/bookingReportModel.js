@@ -49,6 +49,11 @@ const bookingReportSchema = new mongoose.Schema({
         type: Date,
         required: false
     },
+    is_refunded: {
+        type: Boolean,
+        required: false,
+        default: false
+    },
     refund_amount: {
         type: Number,
         required: false,
