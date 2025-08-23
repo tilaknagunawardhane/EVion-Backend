@@ -3,6 +3,7 @@ const { generateToken } = require('../config/jwt');
 const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
+const SupportOfficer = require('../models/supportOfficerModel');
 const { imageUpload } = require('../utils/fileUpload');
 const path = require('path');
 const fs = require('fs');
@@ -52,6 +53,9 @@ const loginUser = async (Model, req, res) => {
         };
 
         if (Model.modelName === 'Admin') {
+            payload.role = user.role;
+        }
+        if (Model.modelName === 'SupportOfficer') {
             payload.role = user.role;
         }
 
@@ -117,7 +121,7 @@ const registerUser = async (Model, req, res) => {
         }
 
         // Generate tokens
-        const accessToken = generateToken(payload, '15m');
+        const accessToken = generateToken(payload, '5d');
         const refreshToken = generateToken({ id: user._id }, '7d');
 
         // Set cookies (optional for mobile clients)
@@ -293,6 +297,9 @@ exports.refreshToken = async (req, res) => {
             case 'admin':
                 user = await Admin.findById(decoded.id);
                 break;
+            case 'supportofficer':
+                user = await SupportOfficer.findById(decoded.id);
+                break;
             case 'evowner':
                 user = await EvOwner.findById(decoded.id);
                 break;
@@ -325,6 +332,10 @@ exports.adminLogin = async (req, res) => {
 
 exports.adminRegister = async (req, res) => {
     registerUser(Admin, req, res);
+};
+
+exports.supportOfficerLogin = async (req, res) => {
+    loginUser(SupportOfficer, req, res);
 };
 
 exports.evOwnerLogin = async (req, res) => {
