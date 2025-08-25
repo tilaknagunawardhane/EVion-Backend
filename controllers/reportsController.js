@@ -949,11 +949,11 @@ const updateRefund = asyncHandler(async (req, res) => {
             },
             { new: true, runValidators: true }
         ).populate('user_id', 'name email')
-         .populate('resolved_by', 'name email')
-         .populate({
-            path: 'booking_id',
-            populate: [{ path: 'charging_station_id', select: 'station_name address city' }]
-         });
+            .populate('resolved_by', 'name email')
+            .populate({
+                path: 'booking_id',
+                populate: [{ path: 'charging_station_id', select: 'station_name address city' }]
+            });
 
         res.status(200).json({
             success: true,
@@ -971,6 +971,208 @@ const updateRefund = asyncHandler(async (req, res) => {
     }
 });
 
+const getEvOwnerReports = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { status, page = 1, limit = 10 } = req.query;
+
+        console.log('Fetching reports for userId:', userId, 'with status:', status, 'page:', page, 'limit:', limit);
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        // Build query based on status
+        const query = { user_id: userId };
+        if (status && status !== 'all') {
+            query.status = status;
+        }
+
+        // Get reports from all three collections
+        const [stationReports, chargerReports, bookingReports] = await Promise.all([
+            StationReport.find(query)
+                .populate('station_id', 'station_name address city')
+                .sort({ createdAt: -1 })
+                .lean(),
+            ChargerReport.find(query)
+                .populate('station_id', 'station_name address city')
+                .sort({ createdAt: -1 })
+                .lean(),
+            BookingReport.find(query)
+                .populate({
+                    path: 'booking_id',
+                    populate: {
+                        path: 'charging_station_id',
+                        select: 'station_name address city'
+                    }
+                })
+                .sort({ createdAt: -1 })
+                .lean()
+        ]);
+
+        // Process charger reports to get charger details
+        const processedChargerReports = await Promise.all(
+            chargerReports.map(async (report) => {
+                if (report.station_id && report.charger_id) {
+                    try {
+                        const station = await PartneredChargingStation.findById(report.station_id._id)
+                            .select('chargers')
+                            .lean();
+                        
+                        if (station) {
+                            const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
+                            return {
+                                ...report,
+                                charger_details: charger || {}
+                            };
+                        }
+                    } catch (error) {
+                        console.error('Error fetching charger details:', error);
+                    }
+                }
+                return report;
+            })
+        );
+
+        // Combine and format all reports
+        const allReports = [
+            ...stationReports.map(report => ({
+                ...report,
+                type: 'station',
+                title: `Station Report - ${report.category}`,
+                reference: report._id
+            })),
+            ...processedChargerReports.map(report => ({
+                ...report,
+                type: 'charger',
+                title: `Charger Report - ${report.category}`,
+                reference: report._id,
+                charger_name: report.charger_details?.charger_name || 'Unknown Charger'
+            })),
+            ...bookingReports.map(report => ({
+                ...report,
+                type: 'booking',
+                title: `Booking Report - ${report.category}`,
+                reference: report._id
+            }))
+        ];
+
+        // console.log(`Total reports found: ${allReports.length}`);
+        // console.log('All Reports:', allReports);
+
+        // Sort by creation date (newest first)
+        allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = page * limit;
+        const paginatedReports = allReports.slice(startIndex, endIndex);
+
+        res.status(200).json({
+            success: true,
+            data: paginatedReports,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(allReports.length / limit),
+                totalItems: allReports.length,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching EV owner reports:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching reports',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const getEvOwnerReportDetails = asyncHandler(async (req, res) => {
+    try {
+        const { userId, reportId, type } = req.params;
+        console.log('Fetching report details for userId:', userId, 'reportId:', reportId, 'type:', type);
+
+        if (!userId || !reportId || !type) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID, Report ID, and Type are required'
+            });
+        }
+
+        let report;
+        switch (type) {
+            case 'station':
+                report = await StationReport.findOne({ _id: reportId, user_id: userId })
+                    .populate('station_id', 'station_name address city district')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+                break;
+
+            case 'charger':
+                report = await ChargerReport.findOne({ _id: reportId, user_id: userId })
+                    .populate('station_id', 'station_name address city district')
+                    .populate('resolved_by', 'name email')
+                    .lean();
+
+                // Get charger details manually
+                if (report && report.station_id) {
+                    const station = await PartneredChargingStation.findById(report.station_id._id)
+                        .select('chargers')
+                        .lean();
+                    
+                    if (station) {
+                        const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
+                        report.charger_details = charger || {};
+                    }
+                }
+                break;
+
+            case 'booking':
+                report = await BookingReport.findOne({ _id: reportId, user_id: userId })
+                    .populate({
+                        path: 'booking_id',
+                        populate: {
+                            path: 'charging_station_id',
+                            select: 'station_name address city district'
+                        }
+                    })
+                    .populate('resolved_by', 'name email')
+                    .lean();
+                break;
+
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type'
+                });
+        }
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found or access denied'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: report
+        });
+
+    } catch (error) {
+        console.error('Error fetching report details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching report details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
@@ -979,5 +1181,7 @@ module.exports = {
     getAllReports,
     getReportDetails,
     saveReportAction,
-    updateRefund
+    updateRefund,
+    getEvOwnerReports,
+    getEvOwnerReportDetails
 }
