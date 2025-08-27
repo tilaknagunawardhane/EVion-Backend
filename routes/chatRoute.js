@@ -6,7 +6,9 @@ const {
     getChatMessages,
     sendMessage,
     markMessagesAsSeen,
-    getUnreadMessageCount
+    getTotalUnreadMessageCount,
+    getChatUnreadCount,
+    getUnreadCountsForAllChats
 } = require('../controllers/chatController');
 
 // Chat routes
@@ -15,6 +17,8 @@ router.get('/user/:userId', getUserChats);
 router.get('/:chatId/messages', getChatMessages);
 router.post('/:chatId/messages', sendMessage);
 router.put('/:chatId/mark-seen', markMessagesAsSeen);
-router.get('/user/:userId/unread-count', getUnreadMessageCount);
+router.get('/user/:userId/unread-count', getTotalUnreadMessageCount);
+router.get('/:chatId/unread-count', getChatUnreadCount);
+router.get('/user/:userId/unread-counts', getTotalUnreadMessageCount);
 
 module.exports = router;

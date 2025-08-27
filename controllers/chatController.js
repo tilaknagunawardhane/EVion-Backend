@@ -350,7 +350,7 @@ const markMessagesAsSeen = asyncHandler(async (req, res) => {
     }
 });
 
-const getUnreadMessageCount = asyncHandler(async (req, res) => {
+const getTotalUnreadMessageCount = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
 
@@ -361,7 +361,17 @@ const getUnreadMessageCount = asyncHandler(async (req, res) => {
             });
         }
 
-       const userChats = await Chat.find({
+        // Verify user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Get all chats where user is participant
+        const userChats = await Chat.find({
             'participants.user_id': userId
         }).select('_id');
 
@@ -373,11 +383,10 @@ const getUnreadMessageCount = asyncHandler(async (req, res) => {
             'seenBy.userId': { $ne: userId }
         });
 
-         res.status(200).json({
+        res.status(200).json({
             success: true,
             data: { unreadCount }
         });
-
 
     } catch (error) {
         console.error('Get unread message count error:', error);
@@ -389,11 +398,121 @@ const getUnreadMessageCount = asyncHandler(async (req, res) => {
     }
 });
 
+// @desc    Get unread message count for a specific chat
+// @route   GET /api/chats/:chatId/unread-count
+const getChatUnreadCount = asyncHandler(async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { userId } = req.query;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required as query parameter'
+            });
+        }
+
+        // Verify chat exists and user is participant
+        const chat = await Chat.findOne({
+            _id: chatId,
+            'participants.user_id': userId
+        });
+
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat not found or access denied'
+            });
+        }
+
+        // Count unread messages in this specific chat
+        const unreadCount = await Message.countDocuments({
+            chat_id: chatId,
+            'seenBy.userId': { $ne: userId }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: { unreadCount }
+        });
+
+    } catch (error) {
+        console.error('Get chat unread count error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving chat unread count',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// @desc    Get unread counts for all user chats in a single query
+// @route   GET /api/chats/user/:userId/unread-counts
+const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        // Get all chats where user is participant
+        const userChats = await Chat.find({
+            'participants.user_id': userId
+        }).select('_id');
+
+        const chatIds = userChats.map(chat => chat._id);
+
+        // Aggregate unread counts per chat using MongoDB aggregation
+        const unreadCounts = await Message.aggregate([
+            {
+                $match: {
+                    chat_id: { $in: chatIds },
+                    'seenBy.userId': { $ne: userId }
+                }
+            },
+            {
+                $group: {
+                    _id: '$chat_id',
+                    unreadCount: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Convert to a more usable format
+        const countsMap = unreadCounts.reduce((acc, item) => {
+            acc[item._id.toString()] = item.unreadCount;
+            return acc;
+        }, {});
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalUnread: unreadCounts.reduce((sum, item) => sum + item.unreadCount, 0),
+                perChat: countsMap
+            }
+        });
+
+    } catch (error) {
+        console.error('Get unread counts error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving unread counts',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     createAutoChatsForStationOwner,
     getUserChats,
     getChatMessages,
     sendMessage,
     markMessagesAsSeen,
-    getUnreadMessageCount
+    getTotalUnreadMessageCount,
+    getChatUnreadCount,
+    getUnreadCountsForAllChats
 }
