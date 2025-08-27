@@ -154,17 +154,20 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
                 `Total chargers now: ${stationData.chargers.length}`;
         }
 
-        // Send the auto message to ADMIN
+        // Send the auto message to ADMIN - CORRECTED seenBy
         await Message.create({
             chat_id: adminChat._id,
             sender: {
-                user_id: admin._id,
+                user_id: admin._id,    // Sent by admin (system message)
                 role: 'admin'
             },
             message: message,
             messageType: 'system',
             timestamp: new Date(),
-            seenBy: [{ userId: admin._id, seenAt: new Date() }]
+            seenBy: [{ 
+                userId: stationOwnerId,  // ✅ Station owner has seen this message
+                seenAt: new Date() 
+            }]
         });
 
         // Update last message in admin chat
