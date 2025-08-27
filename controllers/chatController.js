@@ -5,10 +5,19 @@ const Admin = require('../models/adminModel');
 const StationOwner = require('../models/stationOwnerModel');
 const SupportOfficer = require('../models/supportOfficerModel');
 
-const createAutoChatsForStationOwner = asyncHandler(async (requestAnimationFrame, res) => {
+const createAutoChatsForStationOwner = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerId } = req.body;
         if (!stationOwnerId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required'
+            });
+        }
+
+        // Check if station owner exists
+        const stationOwner = await StationOwner.findById(stationOwnerId);
+        if (!stationOwner) {
             return res.status(404).json({
                 success: false,
                 message: 'Station owner not found'
@@ -25,48 +34,83 @@ const createAutoChatsForStationOwner = asyncHandler(async (requestAnimationFrame
             });
         }
 
-        const adminChat = await Chat.create({
-            participants: [
-                {
-                    user_id: stationOwnerId,
-                    role: 'stationowner',
-                    modelType: 'stationowner'
-                },
-                {
-                    user_id: admin._id,
-                    role: 'admin',
-                    modelType: 'Admin'
-                }
-            ],
-            topic: 'stationApproval',
-            createdAt: new Date(),
-            updatedAt: new Date()
+        let adminChat = null;
+        let supportChat = null;
+        let adminChatExists = false;
+        let supportChatExists = false;
+
+        // Check if admin chat already exists
+        const existingAdminChat = await Chat.findOne({
+            'participants.user_id': stationOwnerId,
+            'participants.user_id': admin._id,
+            'participants.role': 'stationowner',
+            'participants.role': 'admin'
         });
 
-        const supportChat = await Chat.create({
-            participants: [
-                {
-                    user_id: stationOwnerId,
-                    role: 'stationowner',
-                    modelType: 'stationowner'
-                },
-                {
-                    user_id: supportOfficer._id,
-                    role: 'supportofficer',
-                    modelType: 'SupportOfficer'
-                }
-            ],
-            topic: 'support',
-            createdAt: new Date(),
-            updatedAt: new Date()
+        // Check if support chat already exists
+        const existingSupportChat = await Chat.findOne({
+            'participants.user_id': stationOwnerId,
+            'participants.user_id': supportOfficer._id,
+            'participants.role': 'stationowner',
+            'participants.role': 'supportofficer'
         });
+
+        // Create admin chat only if it doesn't exist
+        if (!existingAdminChat) {
+            adminChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: admin._id,
+                        role: 'admin',
+                        modelType: 'Admin'
+                    }
+                ],
+                topic: 'stationApproval',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+        } else {
+            adminChat = existingAdminChat;
+            adminChatExists = true;
+        }
+
+        // Create support chat only if it doesn't exist
+        if (!existingSupportChat) {
+            supportChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: supportOfficer._id,
+                        role: 'supportofficer',
+                        modelType: 'SupportOfficer'
+                    }
+                ],
+                topic: 'support',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+        } else {
+            supportChat = existingSupportChat;
+            supportChatExists = true;
+        }
 
         res.status(201).json({
             success: true,
-            message: 'Auto chats created successfully',
+            message: 'Auto chats processed successfully',
             data: {
                 adminChat,
-                supportChat
+                supportChat,
+                adminChatExists,
+                supportChatExists
             }
         });
     }
