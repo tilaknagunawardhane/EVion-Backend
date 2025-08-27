@@ -7,6 +7,7 @@ const Admin = require('../models/adminModel');
 const Chat = require('../models/chatModel');
 const Message = require('../models/messageModel');
 const { response } = require('express');
+const SupportOfficer = require('../models/supportOfficerModel')
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -58,17 +59,41 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
     try {
         const stationOwner = await StationOwner.findById(stationOwnerId);
         const admin = await Admin.findOne();
+        const supportOfficer = await SupportOfficer.findOne();
 
-        if (!admin || !stationOwner) return;
+        console.log('Station Owner:', stationOwner);
+        console.log('Admin:', admin);
+        console.log('Support Officer:', supportOfficer);
 
-        // Find or create admin chat
+        if (!admin || !stationOwner || !supportOfficer) {
+            console.log('Missing required users:', { admin: !!admin, stationOwner: !!stationOwner, supportOfficer: !!supportOfficer });
+            return;
+        }
+
+        // Find or create admin chat (FIXED QUERY)
         let adminChat = await Chat.findOne({
-            'participants.user_id': stationOwnerId,
-            'participants.user_id': admin._id,
-            'participants.role': 'stationowner',
-            'participants.role': 'admin'
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': admin._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'admin' }
+            ]
         });
 
+        // Find or create support officer chat (FIXED QUERY)
+        let supportChat = await Chat.findOne({
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': supportOfficer._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'supportofficer' }
+            ]
+        });
+
+        console.log('Existing admin chat:', adminChat);
+        console.log('Existing support chat:', supportChat);
+
+        // Create admin chat if it doesn't exist
         if (!adminChat) {
             adminChat = await Chat.create({
                 participants: [
@@ -87,6 +112,29 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
                 createdAt: new Date(),
                 updatedAt: new Date()
             });
+            console.log('Created new admin chat:', adminChat._id);
+        }
+
+        // Create support chat if it doesn't exist
+        if (!supportChat) {
+            supportChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: supportOfficer._id,
+                        role: 'supportofficer',
+                        modelType: 'SupportOfficer'
+                    }
+                ],
+                topic: 'support',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new support chat:', supportChat._id);
         }
 
         let message = '';
@@ -106,11 +154,11 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
                 `Total chargers now: ${stationData.chargers.length}`;
         }
 
-        // Send the auto message
+        // Send the auto message to ADMIN
         await Message.create({
             chat_id: adminChat._id,
             sender: {
-                user_id: admin._id, // Send as system/admin
+                user_id: admin._id,
                 role: 'admin'
             },
             message: message,
@@ -119,7 +167,7 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
             seenBy: [{ userId: admin._id, seenAt: new Date() }]
         });
 
-        // Update last message in chat
+        // Update last message in admin chat
         await Chat.findByIdAndUpdate(adminChat._id, {
             lastMessage: {
                 text: message,
@@ -129,6 +177,8 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
             },
             updatedAt: new Date()
         });
+
+        console.log('Auto message sent to admin successfully');
 
     } catch (error) {
         console.error('Auto message error:', error);
@@ -177,6 +227,7 @@ const createStation = asyncHandler(async (req, res) => {
         if (newStation) {
             await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
 
+            console.log("Go here");
             res.status(201).json({
                 success: true,
                 message: 'Station request submitted successfully',

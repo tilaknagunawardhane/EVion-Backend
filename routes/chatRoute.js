@@ -19,6 +19,6 @@ router.post('/:chatId/messages', sendMessage);
 router.put('/:chatId/mark-seen', markMessagesAsSeen);
 router.get('/user/:userId/unread-count', getTotalUnreadMessageCount);
 router.get('/:chatId/unread-count', getChatUnreadCount);
-router.get('/user/:userId/unread-counts', getTotalUnreadMessageCount);
+router.get('/user/:userId/unread-counts', getUnreadCountsForAllChats);
 
 module.exports = router;

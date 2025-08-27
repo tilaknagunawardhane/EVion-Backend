@@ -448,6 +448,7 @@ const getChatUnreadCount = asyncHandler(async (req, res) => {
 
 // @desc    Get unread counts for all user chats in a single query
 // @route   GET /api/chats/user/:userId/unread-counts
+// @access  Private
 const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
@@ -459,6 +460,15 @@ const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
             });
         }
 
+        // Verify user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
         // Get all chats where user is participant
         const userChats = await Chat.find({
             'participants.user_id': userId
@@ -466,12 +476,22 @@ const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
 
         const chatIds = userChats.map(chat => chat._id);
 
-        // Aggregate unread counts per chat using MongoDB aggregation
+        if (chatIds.length === 0) {
+            return res.status(200).json({
+                success: true,
+                data: {
+                    totalUnread: 0,
+                    perChat: {}
+                }
+            });
+        }
+
+        // Aggregate to count ONLY UNREAD messages per chat
         const unreadCounts = await Message.aggregate([
             {
                 $match: {
                     chat_id: { $in: chatIds },
-                    'seenBy.userId': { $ne: userId }
+                    'seenBy.userId': { $ne: userId } // Only messages NOT seen by this user
                 }
             },
             {
@@ -483,15 +503,18 @@ const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
         ]);
 
         // Convert to a more usable format
-        const countsMap = unreadCounts.reduce((acc, item) => {
-            acc[item._id.toString()] = item.unreadCount;
-            return acc;
-        }, {});
+        const countsMap = {};
+        unreadCounts.forEach(item => {
+            countsMap[item._id.toString()] = item.unreadCount;
+        });
+
+        // Also get total unread count
+        const totalUnread = unreadCounts.reduce((sum, item) => sum + item.unreadCount, 0);
 
         res.status(200).json({
             success: true,
             data: {
-                totalUnread: unreadCounts.reduce((sum, item) => sum + item.unreadCount, 0),
+                totalUnread,
                 perChat: countsMap
             }
         });
