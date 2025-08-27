@@ -3,9 +3,12 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 const EvOwner = require('../models/evOwnerModel');
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
+<<<<<<< HEAD
 const BookingReport = require('../models/bookingReportModel');
 const Booking2 = require('../models/booking2Model'); // Import the new booking model
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 
 const submitStationReport = asyncHandler(async (req, res) => {
     const { userId, stationId, category, description, attachments = [] } = req.body;
@@ -107,7 +110,11 @@ const submitChargerReport = asyncHandler(async (req, res) => {
             message: 'Connector not found in this charger'
         });
     }
+<<<<<<< HEAD
     const trimmedDescription = description.trim();
+=======
+const trimmedDescription = description.trim();
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
     if (trimmedDescription.length > 1000) {
         return res.status(400).json({
             success: false,
@@ -150,6 +157,7 @@ const submitChargerReport = asyncHandler(async (req, res) => {
     });
 });
 
+<<<<<<< HEAD
 const getBookingDetails = asyncHandler(async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -980,4 +988,9 @@ module.exports = {
     getReportDetails,
     saveReportAction,
     updateRefund
+=======
+module.exports = {
+    submitStationReport,
+    submitChargerReport
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 }

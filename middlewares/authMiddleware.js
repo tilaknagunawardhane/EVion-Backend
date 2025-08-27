@@ -3,7 +3,10 @@ const { verifyToken } = require('../config/jwt');
 const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
+<<<<<<< HEAD
 const SupportOfficer = require('../models/supportOfficerModel');
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 
 const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req, res, next) => {
   try {
@@ -32,9 +35,12 @@ const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req,
       case 'evowner':
         user = await EvOwner.findById(decoded.id);
         break;
+<<<<<<< HEAD
       case 'supportofficer':
         user = await SupportOfficer.findById(decoded.id);
         break;
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
       case 'stationowner':
         user = await StationOwner.findById(decoded.id);
         break;

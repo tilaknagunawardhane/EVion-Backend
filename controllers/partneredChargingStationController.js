@@ -20,6 +20,7 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         // 2. Get all stations for this owner
         const stations = await PartneredChargingStation.find({
             station_owner_id: userId
+<<<<<<< HEAD
         }).select('request_status station_status chargers');
 
         // 3. Check conditions
@@ -30,6 +31,14 @@ const checkStationsExist = asyncHandler(async (req, res) => {
             );
         });
 
+=======
+        }).select('request_status station_status');
+
+        // 3. Check conditions
+        const hasApprovedStation = stations.some(
+            station => station.request_status === 'finished'
+        );
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
         const totalStations = stations.length;
 
         res.status(200).json({
@@ -109,6 +118,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerID } = req.body;
         // console.log('req body', req.body);
+<<<<<<< HEAD
         const stations = await PartneredChargingStation.find({ station_owner_id: stationOwnerID })
             .populate('station_owner_id', 'name email')
             .populate('district', 'name')
@@ -117,6 +127,12 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                 select: 'type_name',
                 model: 'connector'
             })
+=======
+        const stations = await PartneredChargingStation.find({ station_owner_id: stationOwnerID, station_status: 'in-progress' })
+            .populate('station_owner_id', 'name email')
+            .populate('district', 'name')
+            .populate('chargers.connector_types', 'type_name')
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
             .lean();
 
         if (!stations || stations.length === 0) {
@@ -127,6 +143,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             });
         }
 
+<<<<<<< HEAD
         const filteredStations = stations.filter(station => {
             // If station has no chargers, include it
             if (!station.chargers || station.chargers.length === 0) return true;
@@ -143,6 +160,14 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             // Safe defaults for station
             const safeStation = {
                 station_name: '',
+=======
+
+        const transformedStations = stations.map(station => {
+            // Safe defaults for station
+            const safeStation = {
+                station_name: '',
+                request_status: 'processing',
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
                 address: '',
                 city: '',
                 district: null,
@@ -159,6 +184,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     power_type: 'Unknown',
                     max_power_output: 0,
                     connector_types: [],
+<<<<<<< HEAD
                     charger_status: 'processing',
                     ...charger
                 };
@@ -176,13 +202,24 @@ const getRequestedStations = asyncHandler(async (req, res) => {
                     : [];
 
 
+=======
+                    ...charger
+                };
+
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
                 return {
                     name: safeCharger.charger_name,
                     powerType: safeCharger.power_type,
                     maxPower: safeCharger.max_power_output,
+<<<<<<< HEAD
                     price: safeCharger.price || 'N/A',
                     status: safeCharger.charger_status,
                     connectors: connectors.filter(Boolean)
+=======
+                    connectors: Array.isArray(safeCharger.connector_types)
+                        ? safeCharger.connector_types.map(ct => ct?.type_name || 'Unknown').filter(Boolean)
+                        : []
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
                 };
             });
 
@@ -554,6 +591,7 @@ const getFavoriteStations = asyncHandler(async (req, res) => {
     }
 });
 
+<<<<<<< HEAD
 // Get all stations for a specific owner
 const getOwnerStations = asyncHandler(async (req, res) => {
   try {
@@ -648,6 +686,8 @@ const getOwnerStations = asyncHandler(async (req, res) => {
   }
 });
 
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 module.exports = {
     checkStationsExist,
     createStation,
@@ -657,6 +697,10 @@ module.exports = {
     getStationForEdit,
     getStationDetails,
     toggleFavoriteStation,
+<<<<<<< HEAD
     getFavoriteStations,
     getOwnerStations,
+=======
+    getFavoriteStations
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 }

@@ -3,7 +3,10 @@ const { generateToken } = require('../config/jwt');
 const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
+<<<<<<< HEAD
 const SupportOfficer = require('../models/supportOfficerModel');
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 const { imageUpload } = require('../utils/fileUpload');
 const path = require('path');
 const fs = require('fs');
@@ -55,9 +58,12 @@ const loginUser = async (Model, req, res) => {
         if (Model.modelName === 'Admin') {
             payload.role = user.role;
         }
+<<<<<<< HEAD
         if (Model.modelName === 'SupportOfficer') {
             payload.role = user.role;
         }
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 
         // Generate both tokens
         const accessToken = generateToken(payload, '15m'); // 15 minutes expiration
@@ -121,7 +127,11 @@ const registerUser = async (Model, req, res) => {
         }
 
         // Generate tokens
+<<<<<<< HEAD
         const accessToken = generateToken(payload, '5d');
+=======
+        const accessToken = generateToken(payload, '15m');
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
         const refreshToken = generateToken({ id: user._id }, '7d');
 
         // Set cookies (optional for mobile clients)
@@ -297,9 +307,12 @@ exports.refreshToken = async (req, res) => {
             case 'admin':
                 user = await Admin.findById(decoded.id);
                 break;
+<<<<<<< HEAD
             case 'supportofficer':
                 user = await SupportOfficer.findById(decoded.id);
                 break;
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
             case 'evowner':
                 user = await EvOwner.findById(decoded.id);
                 break;
@@ -334,10 +347,13 @@ exports.adminRegister = async (req, res) => {
     registerUser(Admin, req, res);
 };
 
+<<<<<<< HEAD
 exports.supportOfficerLogin = async (req, res) => {
     loginUser(SupportOfficer, req, res);
 };
 
+=======
+>>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 exports.evOwnerLogin = async (req, res) => {
     loginUser(EvOwner, req, res);
 };
