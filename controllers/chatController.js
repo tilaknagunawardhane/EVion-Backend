@@ -78,4 +78,278 @@ const createAutoChatsForStationOwner = asyncHandler(async (requestAnimationFrame
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
-})
+});
+
+const getUserChats = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID and role are required'
+            });
+        }
+
+        const chats = await Chat.find({
+            'participants.user_id': userId
+        })
+            .sort({ 'lastMessage.timestamp': -1, 'updatedAt': -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit)
+            .lean();
+
+        const chatsWithDetails = await Promise.all(
+            chats.map(async (chat) => {
+                const otherParticipant = chat.participants.find(
+                    p => p.user_id.toString() !== userId
+                );
+
+                return {
+                    ...chat,
+                    otherParticipant
+                };
+            })
+        );
+
+        const total = await Chat.countDocuments({
+            'participants.user_id': userId
+        });
+
+        res.status(200).json({
+            success: true,
+            data: chatsWithDetails,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / limit),
+                totalChats: total
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get user chats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving user chats',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const getChatMessages = asyncHandler(async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+
+        if (!chatId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Chat ID is required'
+            });
+        }
+
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat not found'
+            });
+        }
+        const messages = await Message.find({ chat_id: chatId })
+            .sort({ timestamp: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit)
+            .lean();
+
+        const total = await Message.countDocuments({ chat_id: chatId });
+
+        res.status(200).json({
+            success: true,
+            data: messages.reverse(), // Reverse to get chronological order
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / limit),
+                totalMessages: total
+            }
+        });
+
+    }
+    catch (error) {
+        console.error('Get chat messages error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving chat messages',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const sendMessage = asyncHandler(async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { senderId, senderRole, message } = req.body;
+
+        if (!chatId || !senderId || !senderRole || !message) {
+            return res.status(400).json({
+                success: false,
+                message: 'Chat ID, sender ID, sender role, and message are required'
+            });
+        }
+
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat not found'
+            });
+        }
+
+        const isParticipant = chat.participants.some(
+            p => p.user_id.toString() === senderId && p.role === senderRole
+        );
+
+        if (!isParticipant) {
+            return res.status(403).json({
+                success: false,
+                message: 'Not a participant in this chat'
+            });
+        }
+
+        const newMessage = await Message.create({
+            chat_id: chatId,
+            sender: {
+                user_id: senderId,
+                role: senderRole
+            },
+            message,
+            timestamp: new Date(),
+            seenBy: [{
+                userId: senderId,
+                seenAt: new Date()
+            }]
+        });
+
+        await Chat.findByIdAndUpdate(chatId, {
+            lastMessage: {
+                text: message,
+                senderId: senderId,
+                senderRole: senderRole,
+                timestamp: new Date()
+            },
+            updatedAt: new Date()
+        });
+
+        res.status(201).json({
+            success: true,
+            message: 'Message sent successfully',
+            data: newMessage
+        });
+
+    } catch (error) {
+        console.error('Send message error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error sending message',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const markMessagesAsSeen = asyncHandler(async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { userId } = req.body;
+
+        if (!chatId || !userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Chat ID and user ID are required'
+            });
+        }
+
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat not found'
+            });
+        }
+
+        await Message.updateMany(
+            {
+                chat_id: chatId,
+                'seenBy.userId': { $ne: userId }
+            },
+            {
+                $push: {
+                    seenBy: {
+                        userId: userId,
+                        seenAt: new Date()
+                    }
+                }
+            }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Messages marked as seen'
+        });
+
+    } catch (error) {
+        console.error('Mark messages as seen error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error marking messages as seen',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const getUnreadMessageCount = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+       const userChats = await Chat.find({
+            'participants.user_id': userId
+        }).select('_id');
+
+        const chatIds = userChats.map(chat => chat._id);
+
+        // Count messages not seen by this user
+        const unreadCount = await Message.countDocuments({
+            chat_id: { $in: chatIds },
+            'seenBy.userId': { $ne: userId }
+        });
+
+         res.status(200).json({
+            success: true,
+            data: { unreadCount }
+        });
+
+
+    } catch (error) {
+        console.error('Get unread message count error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving unread message count',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+module.exports = {
+    createAutoChatsForStationOwner,
+    getUserChats,
+    getChatMessages,
+    sendMessage,
+    markMessagesAsSeen,
+    getUnreadMessageCount
+}

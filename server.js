@@ -30,6 +30,7 @@ const adminRoutes = require('./routes/adminRoute');
 // const commonRoutes = require('./routes/commonRoute');
 const authRoutes = require('./routes/authRoute');
 const reportsRoutes = require('./routes/reportsRoute');
+const chatRoutes = require('./routes/chatRoute');
 
 // const adminRoutes = require('./routes/adminRoutes');
 // const evOwnerRoutes = require('./routes/evOwnerRoutes');
@@ -42,6 +43,7 @@ app.use('/api/common', commonRoutes);
 app.use('/api/stations', partneredChargingStationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/chats', chatRoutes);
 
 app.use('/api/auth', authRoutes);
 // app.use('/api/admin', adminRoutes);
