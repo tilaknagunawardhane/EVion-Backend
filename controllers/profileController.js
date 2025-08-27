@@ -79,5 +79,66 @@ module.exports = {
     } catch (err) {
       res.status(500).json({ success: false, message: 'Server error' });
     }
+  },
+
+  // Request email update (send OTP)
+  async requestEmailUpdate(req, res) {
+    const { userType, id } = req.params;
+    const { newEmail } = req.body;
+    const Model = getModel(userType);
+    if (!Model) return res.status(400).json({ success: false, message: 'Invalid user type' });
+    try {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      await Model.findByIdAndUpdate(id, { email_otp: otp, pending_email: newEmail });
+      // Replace sendSMS with your email sending logic
+      // await sendEmail(newEmail, 'Your OTP Code', `Your OTP is ${otp}`);
+      res.json({ success: true, message: 'OTP sent to new email' });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+  },
+
+  // Verify OTP
+  async verifyEmailOtp(req, res) {
+    const { userType, id } = req.params;
+    const { otp } = req.body;
+    const Model = getModel(userType);
+    if (!Model) return res.status(400).json({ success: false, message: 'Invalid user type' });
+    try {
+      const user = await Model.findById(id);
+      if (user.email_otp === otp) {
+        user.email = user.pending_email;
+        user.email_otp = undefined;
+        user.pending_email = undefined;
+        await user.save();
+        res.json({ success: true, message: 'Email verified and updated' });
+      } else {
+        res.status(400).json({ success: false, message: 'Invalid OTP' });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+  },
+
+  // Resend OTP
+  async resendEmailOtp(req, res) {
+    const { userType, id } = req.params;
+    const Model = getModel(userType);
+    if (!Model) return res.status(400).json({ success: false, message: 'Invalid user type' });
+    try {
+      const user = await Model.findById(id);
+      if (user.pending_email) {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.email_otp = otp;
+        await user.save();
+        // Replace sendSMS with your email sending logic
+        // await sendEmail(user.pending_email, 'Your OTP Code', `Your OTP is ${otp}`);
+        res.json({ success: true, message: 'OTP resent to new email' });
+      } else {
+        res.status(400).json({ success: false, message: 'No pending email update' });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
   }
 };

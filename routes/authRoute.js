@@ -6,11 +6,7 @@ const authMiddleware = require('../middlewares/authMiddleware');
 router.post('/admin/login', authController.adminLogin);
 router.post('/admin/register', authController.adminRegister);
 
-<<<<<<< HEAD
 router.post('/support-officer/login', authController.supportOfficerLogin);
-
-=======
->>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 router.post('/evOwner/login', authController.evOwnerLogin);
 router.post('/evOwner/register', authController.evOwnerRegister);
 

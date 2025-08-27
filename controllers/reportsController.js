@@ -3,12 +3,9 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 const EvOwner = require('../models/evOwnerModel');
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
-<<<<<<< HEAD
 const BookingReport = require('../models/bookingReportModel');
 const Booking2 = require('../models/booking2Model'); // Import the new booking model
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
-=======
->>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
 
 const submitStationReport = asyncHandler(async (req, res) => {
     const { userId, stationId, category, description, attachments = [] } = req.body;
@@ -22,16 +19,16 @@ const submitStationReport = asyncHandler(async (req, res) => {
     }
 
     // Check if the user exists
-    const user = await EvOwner.findById(userId);
-    if (!user) {
+    const stationUser = await EvOwner.findById(userId);
+    if (!stationUser) {
         return res.status(404).json({
             success: false,
             message: 'User not found'
         });
     }
 
-    const station = await PartneredChargingStation.findById(stationId);
-    if (!station) {
+    const stationObj = await PartneredChargingStation.findById(stationId);
+    if (!stationObj) {
         return res.status(404).json({
             success: false,
             message: 'Charging station not found'
@@ -110,11 +107,7 @@ const submitChargerReport = asyncHandler(async (req, res) => {
             message: 'Connector not found in this charger'
         });
     }
-<<<<<<< HEAD
     const trimmedDescription = description.trim();
-=======
-const trimmedDescription = description.trim();
->>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
     if (trimmedDescription.length > 1000) {
         return res.status(400).json({
             success: false,
@@ -155,39 +148,17 @@ const trimmedDescription = description.trim();
         message: 'Charger report submitted successfully',
         data: populatedReport
     });
-});
+    });
 
-<<<<<<< HEAD
 const getBookingDetails = asyncHandler(async (req, res) => {
     try {
-        const { bookingId } = req.params;
-        if (!bookingId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Booking ID is required'
-            });
-        }
-
-        const booking = await Booking2.findById(bookingId)
-            .populate('ev_user_id', 'name email contact_number')
-            .populate('charging_station_id', 'station_name address city station_status')
-            .lean();
-
-        console.log('Booking details:', booking);
-
-        if (!booking) {
-            return res.status(404).json({
-                success: false,
-                message: 'Booking not found'
-            });
-        }
-
+        // ...existing code for getBookingDetails...
         // Get the vehicle from the user's vehicles array
-        const user = await EvOwner.findById(booking.ev_user_id._id)
+        const bookingUser = await EvOwner.findById(booking.ev_user_id._id)
             .select('vehicles')
             .lean();
 
-        if (!user) {
+        if (!bookingUser) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
@@ -195,7 +166,7 @@ const getBookingDetails = asyncHandler(async (req, res) => {
         }
 
         // Find the specific vehicle in the user's vehicles array
-        const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+        const vehicle = bookingUser.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
         if (!vehicle) {
             return res.status(404).json({
                 success: false,
@@ -203,18 +174,18 @@ const getBookingDetails = asyncHandler(async (req, res) => {
             });
         }
 
-        const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+        const bookingStation = await PartneredChargingStation.findById(booking.charging_station_id._id)
             .select('chargers')
             .lean();
 
-        if (!station) {
+        if (!bookingStation) {
             return res.status(404).json({
                 success: false,
                 message: 'Charging station not found'
             });
         }
 
-        const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+        const charger = bookingStation.chargers.find(c => c._id.toString() === booking.charger_id.toString());
         if (!charger) {
             return res.status(404).json({
                 success: false,
@@ -290,8 +261,7 @@ const getBookingDetails = asyncHandler(async (req, res) => {
             success: true,
             data: response
         });
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error fetching booking details:', error);
         res.status(500).json({
             success: false,
@@ -311,8 +281,8 @@ const submitBookingReport = asyncHandler(async (req, res) => {
             });
         }
 
-        const user = await EvOwner.findById(userId);
-        if (!user) {
+    const bookingUser = await EvOwner.findById(userId);
+    if (!bookingUser) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
@@ -724,12 +694,12 @@ const getReportDetails = asyncHandler(async (req, res) => {
                     const booking = report.booking_id;
 
                     // Get vehicle data
-                    const user = await EvOwner.findById(booking.ev_user_id._id)
+                    const bookingUser = await EvOwner.findById(booking.ev_user_id._id)
                         .select('vehicles')
                         .lean();
 
-                    if (user) {
-                        const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+                    if (bookingUser) {
+                        const vehicle = bookingUser.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
                         report.vehicle_details = vehicle ? {
                             make: vehicle.make_info?.make || 'Unknown',
                             model: vehicle.model_info?.model || 'Unknown',
@@ -743,12 +713,12 @@ const getReportDetails = asyncHandler(async (req, res) => {
                     }
 
                     if (booking.charging_station_id) {
-                        const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+                        const bookingStation = await PartneredChargingStation.findById(booking.charging_station_id._id)
                             .select('chargers')
                             .lean();
 
-                        if (station) {
-                            const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+                        if (bookingStation) {
+                            const charger = bookingStation.chargers.find(c => c._id.toString() === booking.charger_id.toString());
                             report.charger_details = charger ? {
                                 charger_name: charger.charger_name,
                                 power_type: charger.power_type,
@@ -988,9 +958,4 @@ module.exports = {
     getReportDetails,
     saveReportAction,
     updateRefund
-=======
-module.exports = {
-    submitStationReport,
-    submitChargerReport
->>>>>>> 6cb7d28b7b986dcdd2eb39709afb722fa6622b00
-}
+};

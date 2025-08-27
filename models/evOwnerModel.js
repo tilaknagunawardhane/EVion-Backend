@@ -167,6 +167,14 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: false
     },
+    email_otp: {
+        type: String,
+        required: false
+    },
+    pending_email: {
+        type: String,
+        required: false
+    },
     otp: otpSchema,
     vehicles: [vehicleSchema],
     favourite_stations: [{
