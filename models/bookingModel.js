@@ -17,13 +17,13 @@ const bookingSchema = new mongoose.Schema({
         required: true
     },
     charger_id: {
-        type: mongoose.Schema.Types.ObjectId, //change this to object id type
-        ref: 'partneredChargingStation.chargers',
+        type: mongoose.Schema.Types.ObjectId,
+        // ref: 'partneredChargingStation.chargers',
         required: true
     },
     connector_type_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'partneredChargingStation.chargers.connector_types',
+        // ref: 'partneredChargingStation.chargers.connector_types',
         required: true
     },
     booking_date: {

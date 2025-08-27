@@ -154,86 +154,113 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
     let upcomingBookings = await Booking.find({ 
         ev_user_id,
         status: 'upcoming' })
-    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id connector_type_id'  );
+    .populate({
+        path: 'charging_station_id',
+        populate: {
+            path: 'chargers.connector_types.connector', // 👈 deep populate
+            model: 'connector'
+        }
+    })
+    .populate({
+        path: 'ev_user_id',           // populate EV owner
+        populate: {
+            path: 'vehicles.make',
+            model: 'vehiclemake'              // optional, fields you want
+        }
+    })
+    .populate({
+        path: 'ev_user_id',           // populate EV owner
+        populate: {
+            path: 'vehicles.model',
+            model: 'vehiclemodel'              // optional, fields you want
+        }
+    })
+    // .populate('charger_id')
+    // .populate('connector_type_id')
+    ;
 
-    // console.log('upcomingBookings: ', upcomingBookings);
+    console.log('upcomingBookings: ', upcomingBookings);
 
     if(upcomingBookings.length === 0){
         return res.json({ message: 'No upcoming Bookings' });
     }
 
-    upcomingBookings = upcomingBookings.map(booking => ({
-        vehicle_id: booking.vehicle_id,
+    upcomingBookings = upcomingBookings.map(booking => {
+        const station = booking.charging_station_id;
+        const charger = station?.chargers.id(booking.charger_id);
+        const connector = charger?.connector_types.id(booking.connector_type_id);
+        const vehicle = booking.ev_user_id?.vehicles.id(booking.vehicle_id);
+
+        return {
+        ...booking.toObject?.() ?? booking,
+        charger,
+        connector: connector.connector,
+        vehicle,
         dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
         duration: formatDuration(booking.no_of_slots * slot_size),
         startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
-        charging_station_id: booking.charging_station_id,
-        connector_type_id: booking.connector_type_id,
-        // charger_id: booking.charger_id,
-        // startTime: booking.start_time,
-        // endTime: booking.end_time,
-        // slotCount: booking.no_of_slots,
-    }));
+        }
+    });
 
-    upcomingBookings = await Promise.all(
-        upcomingBookings.map(async (booking) => {
-            try{
-                const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
-                const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
+    // upcomingBookings = await Promise.all(
+    //     upcomingBookings.map(async (booking) => {
+    //         try{
+    //             const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
+    //             const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
 
-                const connectorTypeDoc = await getConnectorById(booking.connector_type_id);
-                const connectorType = connectorTypeDoc?.toObject?.() || connectorTypeDoc;
+    //             const connectorTypeDoc = await getConnectorById(booking.connector_type_id);
+    //             const connectorType = connectorTypeDoc?.toObject?.() || connectorTypeDoc;
 
-                return{
-                    ...booking,
-                    stationName: chargingStation.station_name,
-                    address: chargingStation.address,
-                    connectorType: connectorType.type_name,
-                };
-            }catch (error){
-                return {
-                    ...booking,
-                    stationName: null,
-                    address: null,
-                    connectorType: null,
-                    chargingStation_error: error.message
-                }
-            }
-        })
-    );
+    //             return{
+    //                 ...booking,
+    //                 stationName: chargingStation.station_name,
+    //                 address: chargingStation.address,
+    //                 connectorType: connectorType.type_name,
+    //             };
+    //         }catch (error){
+    //             return {
+    //                 ...booking,
+    //                 stationName: null,
+    //                 address: null,
+    //                 connectorType: null,
+    //                 chargingStation_error: error.message
+    //             }
+    //         }
+    //     })
+    // );
 
     // console.log('upcomingBookings: ', upcomingBookings);
 
-    const bookingsWithVehicle = await Promise.all(
-        upcomingBookings.map(async (booking) => {
-            try {
-                const vehicleDoc = await getVehicleById(booking.vehicle_id);
-                const vehicle = vehicleDoc?.toObject?.() || vehicleDoc;
+    // const bookingsWithVehicle = await Promise.all(
+    //     upcomingBookings.map(async (booking) => {
+    //         try {
+    //             const vehicleDoc = await getVehicleById(booking.vehicle_id);
+    //             const vehicle = vehicleDoc?.toObject?.() || vehicleDoc;
 
-                const makeDoc = await getMakeName(vehicle.Make);
-                const modelDoc = await getModelName(vehicle.Model);
+    //             const makeDoc = await getMakeName(vehicle.Make);
+    //             const modelDoc = await getModelName(vehicle.Model);
 
-                const make = makeDoc?.make || '';
-                const model = modelDoc?.model || '';
-                const type = vehicle?.Vehicle_Type || ''; 
+    //             const make = makeDoc?.make || '';
+    //             const model = modelDoc?.model || '';
+    //             const type = vehicle?.Vehicle_Type || ''; 
 
-                return {
-                    ...booking,
-                    carName: `${make} ${model} ${type ? `(${type})` : ''}`.trim(),
-                };
-            } catch (error) {
-                return {
-                    ...booking,
-                    carName: null,
-                    vehicle_error: error.message
-                };
-            }
-        })
-    );
+    //             return {
+    //                 ...booking,
+    //                 carName: `${make} ${model} ${type ? `(${type})` : ''}`.trim(),
+    //             };
+    //         } catch (error) {
+    //             return {
+    //                 ...booking,
+    //                 carName: null,
+    //                 vehicle_error: error.message
+    //             };
+    //         }
+    //     })
+    // );
 
-    console.log('bookingsWithVehicle: ', bookingsWithVehicle);
-    return res.status(200).json(bookingsWithVehicle);
+    console.log('upcomingBookings: ', upcomingBookings);
+    return res.status(200).json(upcomingBookings);
     
 });
 
