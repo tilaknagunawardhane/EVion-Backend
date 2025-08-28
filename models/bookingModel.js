@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const bookingSchema = new mongoose.Schema({
     vehicle_id: {
         type: mongoose.Schema.Types.ObjectId,
-        // ref: 'EvOwner.vehicles',
+        ref: 'EvOwner.vehicles',
         required: true
     },
     ev_user_id: {
@@ -18,12 +18,12 @@ const bookingSchema = new mongoose.Schema({
     },
     charger_id: {
         type: mongoose.Schema.Types.ObjectId,
-        // ref: 'partneredChargingStation.chargers',
+        ref: 'partneredChargingStation.chargers',
         required: true
     },
     connector_type_id: {
         type: mongoose.Schema.Types.ObjectId,
-        // ref: 'partneredChargingStation.chargers.connector_types',
+        ref: 'partneredChargingStation.chargers.connector_types',
         required: true
     },
     booking_date: {

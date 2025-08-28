@@ -1,4 +1,7 @@
 const Booking = require('../models/bookingModel');
+const PartneredChargingStation = require('../models/partneredChargingStationModel');
+const EvOwner = require('../models/evOwnerModel');
+
 const asyncHandler = require('express-async-handler');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
@@ -35,7 +38,35 @@ const addBooking = asyncHandler(async (req, res) => {
         throw new Error('Please fill in all booking fields');
     }
 
-    // console.log('booking_date_time: ',booking_date_time);
+    // Fetch station with chargers + connectors populated
+    const station = await PartneredChargingStation.findById(charging_station_id)
+        .populate({
+        path: 'chargers',
+        populate: { path: 'connectors' }
+        });
+
+    console.log('Station: ', station);
+
+    if (!station) {
+        res.status(404);
+        throw new Error('Station not found');
+    }
+
+    // Check charger belongs to station
+    const charger = station.chargers.find(c => c._id.toString() === charger_id);
+    if (!charger) {
+        res.status(400);
+        throw new Error('Charger does not belong to the selected station');
+    }
+
+    // Check connector belongs to charger
+    // const connector = charger.connector_types.find(conn => conn._id.toString() === connector_type_id);
+    // if (!connector) {
+    //     res.status(400);
+    //     throw new Error('Connector does not belong to the selected charger');
+    // }
+
+    console.log('booking_date_time: ',booking_date_time);
     // console.log('timezone: ',new Date().getTimezoneOffset());
 
     // Force it to IST (+5:30)
@@ -62,7 +93,7 @@ const addBooking = asyncHandler(async (req, res) => {
     const booking = await Booking.create({
         ev_user_id,
         vehicle_id,
-        charging_station_id: '687d2ec70e0c0b8ef0b4186c',
+        charging_station_id,
         charger_id,
         connector_type_id,
         booking_date,
@@ -157,26 +188,24 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
     .populate({
         path: 'charging_station_id',
         populate: {
-            path: 'chargers.connector_types.connector', // 👈 deep populate
+            path: 'chargers.connector_types.connector', // deep populate
             model: 'connector'
         }
     })
     .populate({
-        path: 'ev_user_id',           // populate EV owner
+        path: 'ev_user_id',
         populate: {
             path: 'vehicles.make',
-            model: 'vehiclemake'              // optional, fields you want
+            model: 'vehiclemake'
         }
     })
     .populate({
-        path: 'ev_user_id',           // populate EV owner
+        path: 'ev_user_id',
         populate: {
             path: 'vehicles.model',
-            model: 'vehiclemodel'              // optional, fields you want
+            model: 'vehiclemodel'
         }
     })
-    // .populate('charger_id')
-    // .populate('connector_type_id')
     ;
 
     console.log('upcomingBookings: ', upcomingBookings);
@@ -202,62 +231,6 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         }
     });
-
-    // upcomingBookings = await Promise.all(
-    //     upcomingBookings.map(async (booking) => {
-    //         try{
-    //             const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
-    //             const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
-
-    //             const connectorTypeDoc = await getConnectorById(booking.connector_type_id);
-    //             const connectorType = connectorTypeDoc?.toObject?.() || connectorTypeDoc;
-
-    //             return{
-    //                 ...booking,
-    //                 stationName: chargingStation.station_name,
-    //                 address: chargingStation.address,
-    //                 connectorType: connectorType.type_name,
-    //             };
-    //         }catch (error){
-    //             return {
-    //                 ...booking,
-    //                 stationName: null,
-    //                 address: null,
-    //                 connectorType: null,
-    //                 chargingStation_error: error.message
-    //             }
-    //         }
-    //     })
-    // );
-
-    // console.log('upcomingBookings: ', upcomingBookings);
-
-    // const bookingsWithVehicle = await Promise.all(
-    //     upcomingBookings.map(async (booking) => {
-    //         try {
-    //             const vehicleDoc = await getVehicleById(booking.vehicle_id);
-    //             const vehicle = vehicleDoc?.toObject?.() || vehicleDoc;
-
-    //             const makeDoc = await getMakeName(vehicle.Make);
-    //             const modelDoc = await getModelName(vehicle.Model);
-
-    //             const make = makeDoc?.make || '';
-    //             const model = modelDoc?.model || '';
-    //             const type = vehicle?.Vehicle_Type || ''; 
-
-    //             return {
-    //                 ...booking,
-    //                 carName: `${make} ${model} ${type ? `(${type})` : ''}`.trim(),
-    //             };
-    //         } catch (error) {
-    //             return {
-    //                 ...booking,
-    //                 carName: null,
-    //                 vehicle_error: error.message
-    //             };
-    //         }
-    //     })
-    // );
 
     console.log('upcomingBookings: ', upcomingBookings);
     return res.status(200).json(upcomingBookings);
@@ -393,10 +366,28 @@ const getOwnedVehicles = asyncHandler(async (req, res) => {
     return res.status(200).json(ownedVehicles);
 });
 
+const getFavouritePartneredStations = asyncHandler(async (req, res) => {
+    console.log('req: ', req.query);
+    let {ev_user_id} = req.query;
+    
+    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+        return res.status(400).json({ message: 'Invalid EV user ID' });
+    }
+
+    const favouritePartneredStations = await EvOwner.findById(ev_user_id)
+    .select('favourite_stations')
+    .populate('favourite_stations');
+
+    console.log('favourites: ', favouritePartneredStations.favourite_stations);
+
+    return res.status(200).json(favouritePartneredStations.favourite_stations);
+});
+
 module.exports = {
     addBooking,
     getBookedSlots,
     getUserUpcomingBookings,
     getUserCompletedBookings,
     getOwnedVehicles,
+    getFavouritePartneredStations,
 };
