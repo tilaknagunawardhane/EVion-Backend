@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const commentSchema = new mongoose.Schema({
   user: { type: String, required: true },
-  comment_reply_messages: { type: String, required: true },
+  text: { type: String, required: true }, // changed field name
   created_at: { type: Date, default: Date.now }
 });
 
@@ -21,6 +21,7 @@ const discussionSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   comments: [commentSchema],
+  isPinned: { type: Boolean, default: false },   // added
   flagged_count: { type: flaggedSchema, default: () => ({}) },
   flagged_status: { type: Boolean, default: false }
 }, { timestamps: true });
