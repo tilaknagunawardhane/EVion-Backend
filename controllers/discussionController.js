@@ -37,23 +37,71 @@ const createDiscussion = asyncHandler(async (req, res) => {
 const getAllDiscussions = asyncHandler(async (req, res) => {
   const discussions = await Discussion.find().sort({ createdAt: -1 });
 
-  // Map discussions to a consistent structure for frontend
   const formattedDiscussions = discussions.map(d => ({
     id: d._id,
     user: d.user,
     title: d.title,
     description: d.description,
     images: d.images || [],
-    hashtags: d.hashtags || [],
+    hashtags: d.hashtags || [], // optional
     isPinned: d.isPinned || false,
     likes: d.likes || 0,
     comments: d.comments || [],
     createdAt: d.createdAt
   }));
 
-  console.log('GET /get-discussions:', formattedDiscussions);
-
   res.status(200).json({ success: true, data: formattedDiscussions });
 });
 
-module.exports = { createDiscussion, getAllDiscussions };
+
+// GET → single discussion by ID
+const getDiscussionById = asyncHandler(async (req, res) => {
+  const discussion = await Discussion.findById(req.params.id);
+  if (!discussion) {
+    res.status(404);
+    throw new Error("Discussion not found");
+  }
+
+  res.status(200).json({
+    success: true,
+    data: discussion
+  });
+});
+
+// POST → add a comment
+const addComment = asyncHandler(async (req, res) => {
+  const { text, user } = req.body; // frontend sends { text, user }
+
+  if (!text) {
+    res.status(400);
+    throw new Error("Comment text required");
+  }
+
+  const discussion = await Discussion.findById(req.params.id);
+  if (!discussion) {
+    res.status(404);
+    throw new Error("Discussion not found");
+  }
+
+  const newComment = {
+    user: user || "Anonymous",
+    text, // keep consistent with frontend
+    created_at: new Date()
+  };
+
+  discussion.comments.push(newComment);
+  await discussion.save();
+
+  res.status(201).json({
+    success: true,
+    message: "Comment added successfully",
+    data: newComment
+  });
+});
+
+module.exports = { 
+  createDiscussion, 
+  getAllDiscussions, 
+  getDiscussionById, 
+  addComment 
+};
