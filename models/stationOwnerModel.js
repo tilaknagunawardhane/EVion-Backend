@@ -65,8 +65,7 @@ const stationOwnerSchema = new mongoose.Schema({
         required: [true, 'Bank is required']
     },
     branch: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Branch',
+        type: String,
         required: [true, 'Branch is required'],
     },
     accountNumber: {

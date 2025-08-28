@@ -333,7 +333,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             return {
                 _id: safeStation._id,
                 name: safeStation.station_name,
-                status: safeStation.request_status,
+                // status: safeStation.request_status,
                 address: safeStation.address,
                 city: safeStation.city,
                 district: safeStation.district?.name || 'Unknown',
@@ -436,7 +436,7 @@ const updateStation = asyncHandler(async (req, res) => {
             {
                 _id: req.params.id,
                 station_owner_id: stationOwnerID,
-                request_status: { $in: ['processing', 'rejected'] } // Only allow editing if not approved
+                // request_status: { $in: ['processing', 'rejected'] } // Only allow editing if not approved
             },
             updateData,
             { new: true, runValidators: true }
