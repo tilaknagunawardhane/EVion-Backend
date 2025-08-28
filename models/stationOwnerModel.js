@@ -88,6 +88,11 @@ const stationOwnerSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
+        ,
+        recoveryPhoneNumber: {
+            type: String,
+            required: false
+        }
 });
 
 

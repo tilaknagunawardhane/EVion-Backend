@@ -13,6 +13,8 @@ router.put('/:userType/:id', authMiddleware, profileController.updateProfile);
 router.delete('/:userType/:id', authMiddleware, profileController.deleteAccount);
 // Change password
 router.post('/:userType/:id/change-password', authMiddleware, profileController.changePassword);
+// Update recovery phone number
+router.post('/:userType/:id/update-recovery-phone', authMiddleware, profileController.updateRecoveryPhone);
 // Request email update (send OTP)
 router.post('/:userType/:id/request-email-update', authMiddleware, requestEmailUpdate);
 // Verify OTP

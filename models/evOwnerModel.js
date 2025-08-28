@@ -182,6 +182,11 @@ const evOwnerSchema = new mongoose.Schema({
         ref: 'partneredChargingStation'
     }],
 
+        recoveryPhoneNumber: {
+            type: String,
+            required: false
+        },
+
 }, {
     timestamps: true
 });

@@ -14,6 +14,20 @@ function getModel(userType) {
 }
 
 module.exports = {
+  // Update recovery phone number
+  async updateRecoveryPhone(req, res) {
+    const { userType, id } = req.params;
+    const { recoveryPhoneNumber } = req.body;
+    const Model = getModel(userType);
+    if (!Model) return res.status(400).json({ success: false, message: 'Invalid user type' });
+    try {
+      const user = await Model.findByIdAndUpdate(id, { recoveryPhoneNumber }, { new: true, runValidators: true }).select('-password');
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+      res.json({ success: true, message: 'Recovery phone number updated', data: user });
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    }
+  },
   // Get profile by user type and ID
   async getProfile(req, res) {
     const { userType, id } = req.params;

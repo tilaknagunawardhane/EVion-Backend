@@ -17,6 +17,10 @@ const adminSchema = new mongoose.Schema({
     default: 'admin',
     enum: ['admin', 'supportOfficer'],
     },
+        recoveryPhoneNumber: {
+            type: String,
+            required: false
+        },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Admin', adminSchema);
