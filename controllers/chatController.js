@@ -529,6 +529,45 @@ const getUnreadCountsForAllChats = asyncHandler(async (req, res) => {
     }
 });
 
+const getStationOwnerDetails = asyncHandler(async (req, res) => {
+    try {
+        const { stationownerId } = req.params;
+        // console.log("stationOwnerId is: ", stationownerId)
+        if (!stationownerId) {
+            return res.status(400).json({
+                success: false,
+                message: 'No user ID'
+            });
+        }
+
+        const stationOwner = await StationOwner.findById(stationownerId)
+            .select('-password -refreshToken') // Exclude sensitive fields
+            .lean(); // Convert to plain JavaScript object
+
+        if (!stationOwner) {
+            return res.status(404).json({
+                success: false,
+                message: 'No station owner'
+            });
+        }
+        // console.log("Station Owner: ", stationOwner);
+
+        res.status(200).json({
+            success: true,
+            data: stationOwner
+        });
+
+    }
+    catch (error) {
+        console.error('Error with get station owner names', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error with get station owner names',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+})
+
 module.exports = {
     createAutoChatsForStationOwner,
     getUserChats,
@@ -537,5 +576,6 @@ module.exports = {
     markMessagesAsSeen,
     getTotalUnreadMessageCount,
     getChatUnreadCount,
-    getUnreadCountsForAllChats
+    getUnreadCountsForAllChats,
+    getStationOwnerDetails
 }

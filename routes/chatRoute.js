@@ -8,7 +8,8 @@ const {
     markMessagesAsSeen,
     getTotalUnreadMessageCount,
     getChatUnreadCount,
-    getUnreadCountsForAllChats
+    getUnreadCountsForAllChats,
+    getStationOwnerDetails
 } = require('../controllers/chatController');
 
 // Chat routes
@@ -20,5 +21,6 @@ router.put('/:chatId/mark-seen', markMessagesAsSeen);
 router.get('/user/:userId/unread-count', getTotalUnreadMessageCount);
 router.get('/:chatId/unread-count', getChatUnreadCount);
 router.get('/user/:userId/unread-counts', getUnreadCountsForAllChats);
+router.get('/:stationownerId', getStationOwnerDetails);
 
 module.exports = router;
