@@ -9,11 +9,11 @@ const {
   deleteUserNotification
 } = require('../controllers/notificationController');
 
-router.post('/:userId', getNotifications);
-router.put('/:notificationId/read', markNotificationAsRead);
+router.get('/', getNotifications);
+router.put('/:notificationId/read/:userId', markNotificationAsRead);
 router.put('/read-all/:userId', markAllNotificationsAsRead);
 router.post('/unread-count/:userId', getUnreadNotificationCount);
-router.get('/:notificationId', deleteUserNotification);
+router.delete('/:notificationId/:userId', deleteUserNotification);
 
 module.exports = router;
 

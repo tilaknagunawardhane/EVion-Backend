@@ -11,11 +11,12 @@ const {
 
 const getNotifications = asyncHandler(async (req, res) => {
     try {
-        const { page = 1, limit = 20, unread } = req.query;
-        const { userId } = req.params;
-        const {userModel} = req.body;
-    // console.log("recipient id in controller: ", userId)
-    // console.log("recipient model in controller: ", userModel)
+        const { page = 1, limit = 20, unread, userId, userModel } = req.query;
+        // const { page = 1, limit = 20, unread } = req.query;
+        // const { userId } = req.params;
+        // const {userModel} = req.body;
+        // console.log("recipient id in controller: ", userId)
+        // console.log("recipient model in controller: ", userModel)
 
         const result = await getUserNotifications(
             userId,
@@ -72,7 +73,7 @@ const markNotificationAsRead = asyncHandler(async (req, res) => {
 const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
-        const {userModel} = req.body;
+        const { userModel } = req.body;
 
         const result = await markAllAsRead(userId, userModel);
 
@@ -98,7 +99,7 @@ const getUnreadNotificationCount = asyncHandler(async (req, res) => {
         const { userModel } = req.body;
 
         //  console.log("recipient id in controller: ", userId)
-    // console.log("recipient model in controller: ", userModel)
+        // console.log("recipient model in controller: ", userModel)
 
 
         const count = await getUnreadCount(userId, userModel);
@@ -120,7 +121,8 @@ const getUnreadNotificationCount = asyncHandler(async (req, res) => {
 const deleteUserNotification = asyncHandler(async (req, res) => {
     try {
         const { notificationId } = req.params;
-        const userId = req.user._id;
+        const { userId } = req.params;
+
 
         const notification = await deleteNotification(notificationId, userId);
 
@@ -146,9 +148,9 @@ const deleteUserNotification = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getNotifications,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  getUnreadNotificationCount,
-  deleteUserNotification
+    getNotifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    getUnreadNotificationCount,
+    deleteUserNotification
 };
