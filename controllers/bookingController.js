@@ -383,6 +383,27 @@ const getFavouritePartneredStations = asyncHandler(async (req, res) => {
     return res.status(200).json(favouritePartneredStations.favourite_stations);
 });
 
+const getConnectorsByStation = asyncHandler(async (req, res) => {
+    console.log('req: ', req.query);
+    let { station_id } = req.query;
+
+    if(!station_id || !mongoose.Types.ObjectId.isValid(station_id)){
+        return res.status(400).json({ message: 'Invalid station user ID'});
+    }
+
+    const station = await PartneredChargingStation.findById(station_id)
+    .populate('chargers.connector_types.connector');
+
+    const connectors = station.chargers.flatMap(charger => charger.connector_types);
+
+    console.log('connectors: ',connectors);
+    return res.status(200).json(connectors);
+
+
+
+
+});
+
 module.exports = {
     addBooking,
     getBookedSlots,
@@ -390,4 +411,5 @@ module.exports = {
     getUserCompletedBookings,
     getOwnedVehicles,
     getFavouritePartneredStations,
+    getConnectorsByStation,
 };
