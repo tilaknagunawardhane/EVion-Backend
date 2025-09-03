@@ -20,6 +20,7 @@ const notifyNewStation = async (station, owner) => {
             recipientType: 'supportofficer',
             recipientId: await getSupportOfficerId(),
             recipientModel: 'SupportOfficer',
+            title: "New Station Registration",
             message: `A new charging station "${station.station_name}" has been registered by ${owner.name}.`,
             type: 'station_added',
             relatedEntity: {
@@ -55,14 +56,14 @@ const notifyStationStatus = async (station, status, reviewedBy) => {
     }
 };
 
-const notifyNewReport = async (report) => {
+const notifyNewReport = async (report, Type, station) => {
     try {
         await createNotification({
             recipientType: 'supportofficer',
             recipientId: await getSupportOfficerId(),
             recipientModel: 'SupportOfficer',
             title: 'New Report Submitted',
-            message: `A new report has been submitted regarding ${report.issueType}.`,
+            message: `A new report has been submitted regarding ${Type}.`,
             type: 'new_report',
             relatedEntity: {
                 id: report._id,
@@ -70,6 +71,21 @@ const notifyNewReport = async (report) => {
             },
             priority: 'high'
         });
+
+        await createNotification({
+            recipientType: 'stationowner',
+            recipientId: station.station_owner_id,
+            recipientModel: 'stationowner',
+            title: 'New Report Submitted',
+            message: `A new report has been submitted regarding ${Type}.`,
+            type: 'new_report',
+            relatedEntity: {
+                id: report._id,
+                model: 'Report'
+            },
+            priority: 'high'
+        });
+
     } catch (error) {
         console.error('Error sending new report notifications:', error);
     }
