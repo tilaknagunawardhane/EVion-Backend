@@ -12,8 +12,10 @@ const {
 const getNotifications = asyncHandler(async (req, res) => {
     try {
         const { page = 1, limit = 20, unread } = req.query;
-        const userId = req.user._id;
-        const userModel = req.user.constructor.modelName;
+        const { userId } = req.params;
+        const {userModel} = req.body;
+    // console.log("recipient id in controller: ", userId)
+    // console.log("recipient model in controller: ", userModel)
 
         const result = await getUserNotifications(
             userId,
@@ -41,7 +43,8 @@ const getNotifications = asyncHandler(async (req, res) => {
 const markNotificationAsRead = asyncHandler(async (req, res) => {
     try {
         const { notificationId } = req.params;
-        const userId = req.user._id;
+        const { userId } = req.params;
+        // const userModel = req.body;
 
         const notification = await markAsRead(notificationId, userId);
 
@@ -68,8 +71,8 @@ const markNotificationAsRead = asyncHandler(async (req, res) => {
 
 const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
     try {
-        const userId = req.user._id;
-        const userModel = req.user.constructor.modelName;
+        const { userId } = req.params;
+        const {userModel} = req.body;
 
         const result = await markAllAsRead(userId, userModel);
 
@@ -77,6 +80,8 @@ const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
             success: true,
             message: `Marked ${result.modifiedCount} notifications as read`
         });
+
+        // console.log(res);
     } catch (error) {
         console.error('Mark all as read error:', error);
         res.status(500).json({
@@ -89,8 +94,12 @@ const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
 
 const getUnreadNotificationCount = asyncHandler(async (req, res) => {
     try {
-        const userId = req.user._id;
-        const userModel = req.user.constructor.modelName;
+        const { userId } = req.params;
+        const { userModel } = req.body;
+
+        //  console.log("recipient id in controller: ", userId)
+    // console.log("recipient model in controller: ", userModel)
+
 
         const count = await getUnreadCount(userId, userModel);
 

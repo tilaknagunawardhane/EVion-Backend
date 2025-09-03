@@ -16,6 +16,8 @@ const createNotification = async (notificationData) => {
 
 const getUserNotifications = async (userId, userModel, page = 1, limit = 20, unreadOnly = false) => {
   try {
+    // console.log("recipient details: ", userId, userModel)
+
     const query = {
       recipientId: userId,
       recipientModel: userModel
@@ -77,11 +79,14 @@ const markAllAsRead = async (userId, userModel) => {
 
 const getUnreadCount = async (userId, userModel) => {
   try {
+    // console.log("recipient details: ", userId, userModel)
     const count = await Notification.countDocuments({
       recipientId: userId,
       recipientModel: userModel,
       isRead: false
     });
+
+
 
     return count;
   } catch (error) {

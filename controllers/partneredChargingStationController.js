@@ -8,6 +8,7 @@ const Chat = require('../models/chatModel');
 const Message = require('../models/messageModel');
 const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
+const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -229,6 +230,8 @@ const createStation = asyncHandler(async (req, res) => {
 
         if (newStation) {
             await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
+            await notifyNewStation(newStation, owner)
+
 
             console.log("Go here");
             res.status(201).json({
