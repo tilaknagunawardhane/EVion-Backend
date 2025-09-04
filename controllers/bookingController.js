@@ -30,10 +30,10 @@ function formatDuration(minutes) {
 }
 
 const addBooking = asyncHandler(async (req, res) => {
-    let {ev_user_id, vehicle_id, charging_station_id, booking_date_time, no_of_slots, charger_id, connector_type_id} = req.body;
+    let {ev_user_id, vehicle_id, charging_station_id, booking_date_time, no_of_slots, connector_type_id} = req.body;
     console.log(req.body);
 
-    if(!ev_user_id || !vehicle_id || !charging_station_id || !booking_date_time || !no_of_slots || !charger_id || !connector_type_id){
+    if(!ev_user_id || !vehicle_id || !charging_station_id || !booking_date_time || !no_of_slots || !connector_type_id){
         res.status(400);      
         throw new Error('Please fill in all booking fields');
     }
@@ -52,19 +52,23 @@ const addBooking = asyncHandler(async (req, res) => {
         throw new Error('Station not found');
     }
 
-    // Check charger belongs to station
-    const charger = station.chargers.find(c => c._id.toString() === charger_id);
-    if (!charger) {
-        res.status(400);
-        throw new Error('Charger does not belong to the selected station');
+    // get charger belongs to connector
+    let charger_id = null;
+
+    for (const charger of station.chargers) {
+        const match = charger.connector_types.find(
+            (c) => c._id.toString() === connector_type_id.toString()
+        );
+        if (match) {
+            charger_id = charger._id;
+            break;
+        }
     }
 
-    // Check connector belongs to charger
-    // const connector = charger.connector_types.find(conn => conn._id.toString() === connector_type_id);
-    // if (!connector) {
-    //     res.status(400);
-    //     throw new Error('Connector does not belong to the selected charger');
-    // }
+    if (!charger_id) {
+    res.status(400);
+    throw new Error('No charger found for the given connector');
+    }
 
     console.log('booking_date_time: ',booking_date_time);
     // console.log('timezone: ',new Date().getTimezoneOffset());
