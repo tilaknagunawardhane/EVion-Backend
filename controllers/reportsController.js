@@ -6,6 +6,7 @@ const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
 const Booking2 = require('../models/booking2Model'); // Import the new booking model
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
+const { notifyNewReport } = require('../middlewares/notificationMiddleware')
 
 const submitStationReport = asyncHandler(async (req, res) => {
     const { userId, stationId, category, description, attachments = [] } = req.body;
@@ -52,6 +53,8 @@ const submitStationReport = asyncHandler(async (req, res) => {
         status: 'under-review'
     });
     await report.save();
+
+    await notifyNewReport(report, 'Station', station);
 
     res.status(201).json({
         success: true,
@@ -134,6 +137,8 @@ const submitChargerReport = asyncHandler(async (req, res) => {
         attachments: attachments,
         status: 'under-review'
     });
+
+    await notifyNewReport(report, 'Charger', station);
 
     await report.save();
 
@@ -344,6 +349,8 @@ const submitBookingReport = asyncHandler(async (req, res) => {
             });
         }
 
+        const station = await PartneredChargingStation.findById(booking.charging_station_id);
+
         const report = new BookingReport({
             user_id: userId,
             booking_id: bookingId,
@@ -354,6 +361,8 @@ const submitBookingReport = asyncHandler(async (req, res) => {
         });
 
         await report.save();
+
+        await notifyNewReport(report, 'Booking', station);
 
         const populatedReport = await BookingReport.findById(report._id)
             .populate({
@@ -1020,7 +1029,7 @@ const getEvOwnerReports = asyncHandler(async (req, res) => {
                         const station = await PartneredChargingStation.findById(report.station_id._id)
                             .select('chargers')
                             .lean();
-                        
+
                         if (station) {
                             const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
                             return {
@@ -1123,7 +1132,7 @@ const getEvOwnerReportDetails = asyncHandler(async (req, res) => {
                     const station = await PartneredChargingStation.findById(report.station_id._id)
                         .select('chargers')
                         .lean();
-                    
+
                     if (station) {
                         const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
                         report.charger_details = charger || {};
