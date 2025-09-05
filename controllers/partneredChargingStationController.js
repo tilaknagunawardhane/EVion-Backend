@@ -3,6 +3,12 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 const StationOwner = require('../models/stationOwnerModel');
 const path = require('path');
 const EvOwner = require('../models/evOwnerModel');
+const Admin = require('../models/adminModel');
+const Chat = require('../models/chatModel');
+const Message = require('../models/messageModel');
+const { response } = require('express');
+const SupportOfficer = require('../models/supportOfficerModel')
+const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -25,7 +31,7 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         // 3. Check conditions
         const hasApprovedStation = stations.some(station => {
 
-            return station.chargers && station.chargers.some(charger => 
+            return station.chargers && station.chargers.some(charger =>
                 ['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
             );
         });
@@ -49,6 +55,140 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         });
     }
 });
+
+const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) => {
+    try {
+        const stationOwner = await StationOwner.findById(stationOwnerId);
+        const admin = await Admin.findOne();
+        const supportOfficer = await SupportOfficer.findOne();
+
+        console.log('Station Owner:', stationOwner);
+        console.log('Admin:', admin);
+        console.log('Support Officer:', supportOfficer);
+
+        if (!admin || !stationOwner || !supportOfficer) {
+            console.log('Missing required users:', { admin: !!admin, stationOwner: !!stationOwner, supportOfficer: !!supportOfficer });
+            return;
+        }
+
+        // Find or create admin chat (FIXED QUERY)
+        let adminChat = await Chat.findOne({
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': admin._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'admin' }
+            ]
+        });
+
+        // Find or create support officer chat (FIXED QUERY)
+        let supportChat = await Chat.findOne({
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': supportOfficer._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'supportofficer' }
+            ]
+        });
+
+        console.log('Existing admin chat:', adminChat);
+        console.log('Existing support chat:', supportChat);
+
+        // Create admin chat if it doesn't exist
+        if (!adminChat) {
+            adminChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: admin._id,
+                        role: 'admin',
+                        modelType: 'Admin'
+                    }
+                ],
+                topic: 'stationApproval',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new admin chat:', adminChat._id);
+        }
+
+        // Create support chat if it doesn't exist
+        if (!supportChat) {
+            supportChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: supportOfficer._id,
+                        role: 'supportofficer',
+                        modelType: 'SupportOfficer'
+                    }
+                ],
+                topic: 'support',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new support chat:', supportChat._id);
+        }
+
+        let message = '';
+
+        if (actionType === 'station_added') {
+            message = `🚗 New station "${stationData.station_name}" added by ${stationOwner.business_name || stationOwner.name}.\n\n` +
+                `📍 Location: ${stationData.city}, ${stationData.district}\n\n` +
+                `🔌 Chargers: ${stationData.chargers.length} charger(s) added\n\n` +
+                `Please review and approve.`;
+        }
+        else if (actionType === 'station_updated') {
+            message = `📝 Station "${stationData.station_name}" updated by ${stationOwner.business_name || stationOwner.name}.\n` +
+                `Changes include station details modification.`;
+        }
+        else if (actionType === 'charger_added') {
+            message = `🔌 New charger added to station "${stationData.station_name}" by ${stationOwner.business_name || stationOwner.name}.\n` +
+                `Total chargers now: ${stationData.chargers.length}`;
+        }
+
+        // Send the auto message to ADMIN - CORRECTED seenBy
+        await Message.create({
+            chat_id: adminChat._id,
+            sender: {
+                user_id: admin._id,    // Sent by admin (system message)
+                role: 'admin'
+            },
+            message: message,
+            messageType: 'system',
+            timestamp: new Date(),
+            seenBy: [{ 
+                userId: stationOwnerId,  // ✅ Station owner has seen this message
+                seenAt: new Date() 
+            }]
+        });
+
+        // Update last message in admin chat
+        await Chat.findByIdAndUpdate(adminChat._id, {
+            lastMessage: {
+                text: message,
+                senderId: admin._id,
+                senderRole: 'admin',
+                timestamp: new Date()
+            },
+            updatedAt: new Date()
+        });
+
+        console.log('Auto message sent to admin successfully');
+
+    } catch (error) {
+        console.error('Auto message error:', error);
+        // Don't throw error - this is a background process
+    }
+};
 
 const createStation = asyncHandler(async (req, res) => {
     try {
@@ -88,12 +228,19 @@ const createStation = asyncHandler(async (req, res) => {
             ...stationData
         });
 
-        res.status(201).json({
-            success: true,
-            message: 'Station request submitted successfully',
-            data: newStation,
-            shouldNavigateToDashboard: hasFinishedStation // Add this flag
-        });
+        if (newStation) {
+            await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
+            await notifyNewStation(newStation, owner)
+
+
+            console.log("Go here");
+            res.status(201).json({
+                success: true,
+                message: 'Station request submitted successfully',
+                data: newStation,
+                shouldNavigateToDashboard: hasFinishedStation // Add this flag
+            });
+        }
 
     } catch (error) {
         console.error('Station creation error:', error);
@@ -130,9 +277,9 @@ const getRequestedStations = asyncHandler(async (req, res) => {
         const filteredStations = stations.filter(station => {
             // If station has no chargers, include it
             if (!station.chargers || station.chargers.length === 0) return true;
-            
+
             // Check if ALL chargers don't have the excluded statuses
-            return station.chargers.every(charger => 
+            return station.chargers.every(charger =>
                 !['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
             );
         });
@@ -285,6 +432,8 @@ const getStationForEdit = asyncHandler(async (req, res) => {
 const updateStation = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerID, ...updateData } = req.body;
+        console.log("station id is ", req.params.id);
+        console.log("Station owner is ", stationOwnerID);
 
         const station = await PartneredChargingStation.findOneAndUpdate(
             {
@@ -296,12 +445,16 @@ const updateStation = asyncHandler(async (req, res) => {
             { new: true, runValidators: true }
         );
 
+        console.log("Station Updated ", station)
+
         if (!station) {
             return res.status(404).json({
                 success: false,
                 message: 'Station not found, not owned by user, or already approved'
             });
         }
+
+        await sendAutoMessageToAdmin(stationOwnerID, station, 'station_updated');
 
         res.status(200).json({
             success: true,
@@ -322,7 +475,7 @@ const updateStation = asyncHandler(async (req, res) => {
 const getStationDetails = asyncHandler(async (req, res) => {
     try {
         const { stationId } = req.params;
-        const {userID} = req.body;
+        const { userID } = req.body;
         // console.log('Fetching details for station:', stationId);
         // console.log('User ID is :', userID);
 
@@ -340,9 +493,9 @@ const getStationDetails = asyncHandler(async (req, res) => {
             .lean();
 
         if (!station) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Station not found' 
+                message: 'Station not found'
             });
         }
 
@@ -375,7 +528,7 @@ const getStationDetails = asyncHandler(async (req, res) => {
                 connector_types: charger.connector_types.map(connectorType => ({
                     connector_id: connectorType._id,
                     status: connectorType.status,
-                    connector: connectorType.connector || null ,// Handle missing connectors
+                    connector: connectorType.connector || null,// Handle missing connectors
                     connector_img: connectorType.connector?.image ? path.join('/uploads', connectorType.connector.image) : null
                 })),
                 charger_status: charger.charger_status || 'processing',
@@ -407,7 +560,7 @@ const toggleFavoriteStation = asyncHandler(async (req, res) => {
         const { userId } = req.body;
 
         // Validate inputs
-         if (!stationId || !userId) {
+        if (!stationId || !userId) {
             return res.status(400).json({
                 success: false,
                 message: 'Station ID and User ID are required'
@@ -469,7 +622,7 @@ const toggleFavoriteStation = asyncHandler(async (req, res) => {
 const getFavoriteStations = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
-        
+
         // Validate user ID
         if (!userId) {
             return res.status(400).json({
@@ -556,70 +709,70 @@ const getFavoriteStations = asyncHandler(async (req, res) => {
 
 // Get all stations for a specific owner
 const getOwnerStations = asyncHandler(async (req, res) => {
-  try {
-    console.log('Fetching owner stations', req.query);
-    const stationOwnerID = req.query.stationOwnerId || req.user?._id; // Assuming auth middleware sets req.user
+    try {
+        console.log('Fetching owner stations', req.query);
+        const stationOwnerID = req.query.stationOwnerId || req.user?._id; // Assuming auth middleware sets req.user
 
-    if (!stationOwnerID) {
-      return res.status(400).json({
-        success: false,
-        message: 'Station owner ID is required'
-      });
-    }
-
-    // Verify station owner exists
-    const owner = await StationOwner.findById(stationOwnerID);
-    if (!owner) {
-      return res.status(404).json({
-        success: false,
-        message: 'Station owner not found'
-      });
-    }
-
-    // Fetch all stations for the owner
-    const stations = await PartneredChargingStation.find({
-      station_owner_id: stationOwnerID
-    })
-      .populate('district', 'name')
-      .populate({
-        path: 'chargers',
-        populate: {
-          path: 'connector_types.connector',
-          select: 'type_name',
-          model: 'connector'
-        }
-      })
-      .lean();
-
-    // Format stations to match frontend expectations
-    const formattedStations = stations.map(station => {
-        const isNewStation = station.chargers.every(c =>
-            ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
-        );
-        let displayStatus = station.station_status;
-        if (isNewStation && station.station_status === 'unavailable') {
-            displayStatus = 'processing';
+        if (!stationOwnerID) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required'
+            });
         }
 
-        return {
-            id: station._id.toString(),
-            name: station.station_name || 'Unnamed Station',
-            status: displayStatus.toLowerCase(),
-            address: `${station.address || ''}, ${station.city || ''}`.trim(),
-            addressLine: station.address || 'No Address Provided',
-            city: station.city || 'N/A',
-            district: station.district?.name || 'N/A',
-            electricityProvider: station.electricity_provider || 'N/A',
-            powerSource: station.power_source || 'N/A',
-            location: station.location || { lat: 0, lng: 0 },
-            chargers: station.chargers.map(charger => ({
-                name: charger.charger_name || 'Unnamed Charger',
-                powerType: charger.power_type || 'Unknown',
-                maxPower: charger.max_power_output || 0,
-                price: charger.price || 0,
-                connectors: charger.connector_types
-                    .map(ct => ct.connector?.type_name || 'N/A')
-                    .filter(Boolean)
+        // Verify station owner exists
+        const owner = await StationOwner.findById(stationOwnerID);
+        if (!owner) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station owner not found'
+            });
+        }
+
+        // Fetch all stations for the owner
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: stationOwnerID
+        })
+            .populate('district', 'name')
+            .populate({
+                path: 'chargers',
+                populate: {
+                    path: 'connector_types.connector',
+                    select: 'type_name',
+                    model: 'connector'
+                }
+            })
+            .lean();
+
+        // Format stations to match frontend expectations
+        const formattedStations = stations.map(station => {
+            const isNewStation = station.chargers.every(c =>
+                ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+            );
+            let displayStatus = station.station_status;
+            if (isNewStation && station.station_status === 'unavailable') {
+                displayStatus = 'processing';
+            }
+
+            return {
+                id: station._id.toString(),
+                name: station.station_name || 'Unnamed Station',
+                status: displayStatus.toLowerCase(),
+                address: `${station.address || ''}, ${station.city || ''}`.trim(),
+                addressLine: station.address || 'No Address Provided',
+                city: station.city || 'N/A',
+                district: station.district?.name || 'N/A',
+                electricityProvider: station.electricity_provider || 'N/A',
+                powerSource: station.power_source || 'N/A',
+                location: station.location || { lat: 0, lng: 0 },
+                chargers: station.chargers.map(charger => ({
+                    name: charger.charger_name || 'Unnamed Charger',
+                    powerType: charger.power_type || 'Unknown',
+                    maxPower: charger.max_power_output || 0,
+                    price: charger.price || 0,
+                    connectors: charger.connector_types
+                        .map(ct => ct.connector?.type_name || 'N/A')
+                        .filter(Boolean)
                 })),
                 dateOfRequest: station.createdAt
                     ? new Date(station.createdAt).toLocaleString('en-US', {
@@ -629,23 +782,23 @@ const getOwnerStations = asyncHandler(async (req, res) => {
                         hour: '2-digit',
                         minute: '2-digit',
                         hour12: true
-                        })
+                    })
                     : null
-        };
-    });
+            };
+        });
 
-    res.status(200).json({
-      success: true,
-      data: formattedStations
-    });
-  } catch (error) {
-    console.error('Error fetching owner stations:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching stations',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
+        res.status(200).json({
+            success: true,
+            data: formattedStations
+        });
+    } catch (error) {
+        console.error('Error fetching owner stations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 });
 
 module.exports = {
