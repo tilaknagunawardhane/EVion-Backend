@@ -751,8 +751,20 @@ const getOwnerStations = asyncHandler(async (req, res) => {
             );
             let displayStatus = station.station_status;
             if (isNewStation && station.station_status === 'unavailable') {
-                displayStatus = 'processing';
+                // change 'unavailable' to 'reviewing' for new stations
+                displayStatus = 'reviewing'; 
             }
+
+            if (!isNewStation && station.station_status === 'unavailable') {
+                // change 'unavailable' to 'reviewing' for new stations
+                displayStatus = 'closed'; 
+            }
+
+            // Calculate average rating for the station
+            const stationRatings = station.ratings || [];
+            const averageRating = stationRatings.length > 0 
+                ? stationRatings.reduce((sum, rating) => sum + rating.stars, 0) / stationRatings.length
+                : 0;
 
             return {
                 id: station._id.toString(),
@@ -765,6 +777,8 @@ const getOwnerStations = asyncHandler(async (req, res) => {
                 electricityProvider: station.electricity_provider || 'N/A',
                 powerSource: station.power_source || 'N/A',
                 location: station.location || { lat: 0, lng: 0 },
+                averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+                totalRatings: stationRatings.length,
                 chargers: station.chargers.map(charger => ({
                     name: charger.charger_name || 'Unnamed Charger',
                     powerType: charger.power_type || 'Unknown',
