@@ -1182,6 +1182,365 @@ const getEvOwnerReportDetails = asyncHandler(async (req, res) => {
     }
 });
 
+const getStationOwnerReports = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerId } = req.params;
+        const { status, type, page = 1, limit = 10, search } = req.query;
+
+        const stationOwnerExist = await StationOwner.findById(userId);
+        if (!stationOwnerExist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station owner not found'
+            });
+        }
+
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: stationOwnerId
+        }).select('_id station_name');
+
+        if (!stations || stations.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No stations found for this owner'
+            });
+        }
+
+        const stationIds = stations.map(station => station._id);
+        let stationQuery = { station_id: { $in: stationIds } };
+        let chargerQuery = { station_id: { $in: stationIds } };
+        let bookingQuery = {
+            'booking_id.station_id': { $in: stationIds }
+        }
+
+        if (status && status !== 'all') {
+            stationQuery.status = status,
+                chargerQuery.status = status,
+                bookingQuery.status = status
+        }
+
+        if (search) {
+            const searchRegex = { $regex: search, $options: 'i' };
+
+            stationQuery.$or = [
+                { category: searchRegex },
+                { description: searchRegex }
+            ];
+            chargerQuery.$or = [
+                { category: searchRegex },
+                { description: searchRegex }
+            ];
+            bookingQuery.$or = [
+                { category: searchRegex },
+                { description: searchRegex }
+            ];
+        }
+
+        let reports = [];
+        let totalCount = 0;
+
+        switch (type) {
+            case 'stations':
+                [reports, totalCount] = await Promise.all([
+                    StationReport.find(stationQuery)
+                        .populate('user_id', 'name email')
+                        .populate('station_id', 'station_name')
+                        .sort({ createdAt: -1 })
+                        .limit(limit * 1)
+                        .skip((page - 1) * limit)
+                        .lean(),
+                    StationReport.countDocuments(stationQuery)
+                ]);
+                break;
+
+            case 'chargers':
+                [reports, totalCount] = await Promise.all([
+                    ChargerReport.find(chargerQuery)
+                        .populate('user_id', 'name email')
+                        .populate('station_id', 'station_name address city')
+                        .sort({ createdAt: -1 })
+                        .limit(limit * 1)
+                        .skip((page - 1) * limit)
+                        .lean(),
+                    ChargerReport.countDocuments(chargerQuery)
+                ]);
+                break;
+
+            case 'bookings':
+                [reports, totalCount] = await Promise.all([
+                    BookingReport.find(bookingQuery)
+                        .populate('user_id', 'name email')
+                        .populate({
+                            path: 'booking_id',
+                            populate: {
+                                path: 'charging_station_id',
+                                select: 'station_name address city'
+                            }
+                        })
+                        .sort({ createdAt: -1 })
+                        .limit(limit * 1)
+                        .skip((page - 1) * limit)
+                        .lean(),
+                    BookingReport.countDocuments(bookingQuery)
+                ]);
+                break;
+
+            default:
+                const [stationReports, chargerReports, bookingReports] = await Promise.all([
+                    StationReport.find(stationQuery)
+                        .populate('user_id', 'name email')
+                        .populate('station_id', 'station_name address city')
+                        .sort({ createdAt: -1 })
+                        .lean(),
+                    ChargerReport.find(chargerQuery)
+                        .populate('user_id', 'name email')
+                        .populate('station_id', 'station_name address city')
+                        .sort({ createdAt: -1 })
+                        .lean(),
+                    BookingReport.find(bookingQuery)
+                        .populate('user_id', 'name email')
+                        .populate({
+                            path: 'booking_id',
+                            populate: {
+                                path: 'charging_station_id',
+                                select: 'station_name address city'
+                            }
+                        })
+                        .sort({ createdAt: -1 })
+                        .lean()
+                ]);
+
+                reports = [...stationReports, ...chargerReports, ...bookingReports]
+                    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                    .slice((page - 1) * limit, page * limit);
+
+                totalCount = await Promise.all([
+                    stationReports.countDocuments(stationQuery),
+                    chargerReports.countDocuments(chargerQuery),
+                    bookingReports.countDocuments(bookingQuery)
+                ]).then(counts => counts.reduce((sum, count) => sum + count, 0));
+                break;
+        }
+        const formattedReports = reports.map(report => {
+            const baseReport = {
+                reportId: report._id,
+                reportedDate: report.createdAt,
+                reportType: report.modelName || (report.booking_id ? 'booking' : report.charger_id ? 'charger' : 'station'),
+                category: report.category,
+                description: report.description,
+                status: report.status,
+                stationName: report.station_id?.station_name || report.booking_id?.charging_station_id?.station_name
+            };
+
+            if (report.booking_id) {
+                baseReport.associatedStation = report.booking_id.charging_station_id?.station_name;
+            }
+            else if (report.station_id) {
+                baseReport.associatedStation = report.station_id.station_name;
+            }
+
+            return baseReport;
+        })
+
+        res.status(200).json({
+            success: true,
+            data: formattedReports,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching EV owner reports:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching reports',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerId, reportId, type } = req.params;
+
+        console.log('Fetching report details for station owner:', stationOwnerId, 'reportId:', reportId, 'type:', type);
+
+        if (!stationOwnerId || !reportId || !type) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station Owner ID, Report ID, and Type are required'
+            });
+        }
+
+        // First verify the station owner owns the station related to this report
+        const stations = await PartneredChargingStation.find({ 
+            station_owner_id: stationOwnerId 
+        }).select('_id');
+
+        if (!stations || stations.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No stations found for this owner'
+            });
+        }
+
+        const stationIds = stations.map(station => station._id);
+        let report;
+
+        switch (type) {
+            case 'station':
+                report = await StationReport.findOne({ 
+                    _id: reportId, 
+                    station_id: { $in: stationIds } 
+                })
+                .populate('user_id', 'name email contact_number')
+                .populate('station_id', 'station_name address city district station_status')
+                .populate('resolved_by', 'name email')
+                .lean();
+                break;
+
+            case 'charger':
+                report = await ChargerReport.findOne({ 
+                    _id: reportId, 
+                    station_id: { $in: stationIds } 
+                })
+                .populate('user_id', 'name email contact_number')
+                .populate('station_id', 'station_name address city district station_status')
+                .populate('resolved_by', 'name email')
+                .lean();
+
+                // Get charger details
+                if (report && report.station_id) {
+                    const station = await PartneredChargingStation.findById(report.station_id._id)
+                        .select('chargers')
+                        .lean();
+
+                    if (station) {
+                        const charger = station.chargers.find(c => c._id.toString() === report.charger_id.toString());
+                        report.charger_details = charger || {};
+
+                        if (charger) {
+                            const connector = charger.connector_types.find(ct => ct._id.toString() === report.connector_id.toString());
+                            if (connector) {
+                                const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                    .select('type_name current_type')
+                                    .lean();
+                                report.connector_details = connectorDetails || {};
+                            }
+                        }
+                    }
+                }
+                break;
+
+            case 'booking':
+                report = await BookingReport.findOne({ 
+                    _id: reportId 
+                })
+                .populate('user_id', 'name email contact_number')
+                .populate('resolved_by', 'name email')
+                .populate({
+                    path: 'booking_id',
+                    populate: {
+                        path: 'charging_station_id',
+                        select: 'station_name address city district station_status',
+                        match: { _id: { $in: stationIds } }
+                    }
+                })
+                .lean();
+
+                // Check if the booking station belongs to this owner
+                if (!report || !report.booking_id || !report.booking_id.charging_station_id) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Report not found or access denied'
+                    });
+                }
+
+                // Get vehicle and charger details
+                if (report.booking_id) {
+                    const booking = report.booking_id;
+
+                    // Get vehicle data
+                    const user = await EvOwner.findById(booking.ev_user_id?._id)
+                        .select('vehicles')
+                        .lean();
+
+                    if (user) {
+                        const vehicle = user.vehicles.find(v => v._id.toString() === booking.vehicle_id.toString());
+                        report.vehicle_details = vehicle ? {
+                            make: vehicle.make_info?.make || 'Unknown',
+                            model: vehicle.model_info?.model || 'Unknown',
+                            manufactured_year: vehicle.manufactured_year,
+                            battery_capacity: vehicle.battery_capacity,
+                            color: vehicle.color_info?.color || 'N/A',
+                            vehicle_type: vehicle.vehicle_type,
+                            connector_type_AC: vehicle.connector_type_AC_info?.type_name || 'N/A',
+                            connector_type_DC: vehicle.connector_type_DC_info?.type_name || 'N/A'
+                        } : {};
+                    }
+
+                    // Get charger and connector details
+                    if (booking.charging_station_id) {
+                        const station = await PartneredChargingStation.findById(booking.charging_station_id._id)
+                            .select('chargers')
+                            .lean();
+
+                        if (station) {
+                            const charger = station.chargers.find(c => c._id.toString() === booking.charger_id.toString());
+                            report.charger_details = charger ? {
+                                charger_name: charger.charger_name,
+                                power_type: charger.power_type,
+                                max_power_output: charger.max_power_output,
+                                price: charger.price
+                            } : {};
+
+                            if (charger) {
+                                const connector = charger.connector_types.find(ct => ct._id.toString() === booking.connector_type_id.toString());
+                                if (connector) {
+                                    const connectorDetails = await ConnectorModel.findById(connector.connector)
+                                        .select('type_name current_type image')
+                                        .lean();
+                                    report.connector_details = connectorDetails || {};
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type'
+                });
+        }
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found or access denied'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: report
+        });
+
+    } catch (error) {
+        console.error('Error fetching station owner report details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching report details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
@@ -1192,5 +1551,7 @@ module.exports = {
     saveReportAction,
     updateRefund,
     getEvOwnerReports,
-    getEvOwnerReportDetails
+    getEvOwnerReportDetails,
+    getStationOwnerReports,
+    getStationOwnerReportDetails
 }
