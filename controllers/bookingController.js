@@ -244,7 +244,7 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
 const getUserCompletedBookings = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
     let {ev_user_id} = req.query;
-
+    
     if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
         return res.status(400).json({ message: 'Invalid EV user ID' });
     }
@@ -255,83 +255,55 @@ const getUserCompletedBookings = asyncHandler(async (req, res) => {
     let completedBookings = await Booking.find({ 
         ev_user_id,
         status: 'completed' })
-    .select('vehicle_id charger_id plug_type booking_date start_time end_time no_of_slots charging_station_id connector_type_id cost');
+    .populate({
+        path: 'charging_station_id',
+        populate: {
+            path: 'chargers.connector_types.connector', // deep populate
+            model: 'connector'
+        }
+    })
+    .populate({
+        path: 'ev_user_id',
+        populate: {
+            path: 'vehicles.make',
+            model: 'vehiclemake'
+        }
+    })
+    .populate({
+        path: 'ev_user_id',
+        populate: {
+            path: 'vehicles.model',
+            model: 'vehiclemodel'
+        }
+    })
+    ;
 
-    console.log('completed Bookings: ', completedBookings);
+    console.log('completedBookings: ', completedBookings);
 
     if(completedBookings.length === 0){
         return res.json({ message: 'No completed Bookings' });
     }
 
-    completedBookings = completedBookings.map(booking => ({
-        vehicle_id: booking.vehicle_id,
+    completedBookings = completedBookings.map(booking => {
+        const station = booking.charging_station_id;
+        const charger = station?.chargers.id(booking.charger_id);
+        const connector = charger?.connector_types.id(booking.connector_type_id);
+        const vehicle = booking.ev_user_id?.vehicles.id(booking.vehicle_id);
+
+        return {
+        ...booking.toObject?.() ?? booking,
+        charger,
+        connector: connector.connector,
+        vehicle,
         dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
         duration: formatDuration(booking.no_of_slots * slot_size),
         startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
-        charging_station_id: booking.charging_station_id,
-        connector_type_id: booking.connector_type_id,
-        cost: booking.cost,
-    }));
+        }
+    });
 
-    completedBookings = await Promise.all(
-        completedBookings.map(async (booking) => {
-            try{
-                const chargingStationDoc = await getPartneredChargingStation(booking.charging_station_id);
-                const chargingStation = chargingStationDoc?.toObject?.() || chargingStationDoc;
-
-                const connectorTypeDoc = await getConnectorById(booking.connector_type_id);
-                const connectorType = connectorTypeDoc?.toObject?.() || connectorTypeDoc;
-
-                return{
-                    ...booking,
-                    stationName: chargingStation.station_name,
-                    address: chargingStation.address,
-                    connectorType: connectorType.type_name,
-                };
-            }catch (error){
-                return {
-                    ...booking,
-                    stationName: null,
-                    address: null,
-                    connectorType: null,
-                    chargingStation_error: error.message
-                }
-            }
-        })
-    );
-
-    // console.log('completedBookings: ', completedBookings);
-
-    const bookingsWithVehicle = await Promise.all(
-        completedBookings.map(async (booking) => {
-            try {
-                const vehicleDoc = await getVehicleById(booking.vehicle_id);
-                const vehicle = vehicleDoc?.toObject?.() || vehicleDoc;
-
-                const makeDoc = await getMakeName(vehicle.Make);
-                const modelDoc = await getModelName(vehicle.Model);
-
-                const make = makeDoc?.make || '';
-                const model = modelDoc?.model || '';
-                const type = vehicle?.Vehicle_Type || ''; 
-
-                return {
-                    ...booking,
-                    carName: `${make} ${model} ${type ? `(${type})` : ''}`.trim(),
-                };
-            } catch (error) {
-                return {
-                    ...booking,
-                    carName: null,
-                    vehicle_error: error.message
-                };
-            }
-        })
-    );
-
-     console.log('bookingsWithVehicle: ', bookingsWithVehicle);
-    return res.status(200).json(bookingsWithVehicle);
+    console.log('completedBookings: ', completedBookings);
+    return res.status(200).json(completedBookings);
 
 });
 
