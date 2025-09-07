@@ -770,7 +770,7 @@ const getOwnerStations = asyncHandler(async (req, res) => {
                 id: station._id.toString(),
                 name: station.station_name || 'Unnamed Station',
                 status: displayStatus.toLowerCase(),
-                address: `${station.address || ''}, ${station.city || ''}`.trim(),
+                address: `${station.address || ''}, ${station.city || ''}, ${station.district?.name || ''}`.trim(),
                 addressLine: station.address || 'No Address Provided',
                 city: station.city || 'N/A',
                 district: station.district?.name || 'N/A',
@@ -784,6 +784,7 @@ const getOwnerStations = asyncHandler(async (req, res) => {
                     powerType: charger.power_type || 'Unknown',
                     maxPower: charger.max_power_output || 0,
                     price: charger.price || 0,
+                    chargerStatus: charger.charger_status || 'processing',
                     connectors: charger.connector_types
                         .map(ct => ct.connector?.type_name || 'N/A')
                         .filter(Boolean)
