@@ -165,9 +165,9 @@ const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) =
             message: message,
             messageType: 'system',
             timestamp: new Date(),
-            seenBy: [{ 
+            seenBy: [{
                 userId: stationOwnerId,  // ✅ Station owner has seen this message
-                seenAt: new Date() 
+                seenAt: new Date()
             }]
         });
 
@@ -801,6 +801,105 @@ const getOwnerStations = asyncHandler(async (req, res) => {
     }
 });
 
+// Get stations for support officer's table
+const getAllStationsForSupportOfficer = asyncHandler(async (req, res) => {
+    try {
+        const { 
+            status, 
+            district, 
+            city, 
+            electricity_provider, 
+            power_source, 
+            page = 1, 
+            limit = 10, 
+            search 
+        } = req.query;
+
+        const query = {};
+
+        if (status && status !== 'all') {
+            query.station_status = status;
+        }
+        if (district && district !== 'all') {
+            query.district = district;
+        }
+        if (city && city !== 'all') {
+            query.city = new RegExp(city, 'i');
+        }
+        if (electricity_provider && electricity_provider !== 'all') {
+            query.electricity_provider = electricity_provider;
+        }
+        if (power_source && power_source !== 'all') {
+            query.power_source = power_source;
+        }
+
+        if (search) {
+            query.$or = [
+                { station_name: { $regex: search, $options: 'i' } },
+                { address: { $regex: search, $options: 'i' } },
+                { city: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const stations = await PartneredChargingStation.find(query)
+            .populate('district', 'name') 
+            .populate('station_owner_id', 'name email contact_number') 
+            .select('station_name district address city electricity_provider power_source station_status chargers ratings createdAt updatedAt')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const totalCount = await PartneredChargingStation.countDocuments(query);
+
+        const stationsWithChargerCount = stations.map(station => {
+            const hasChargers = station.chargers && Array.isArray(station.chargers) && station.chargers.length > 0;
+            
+            let availableChargers = 0;
+            let totalChargers = 0;
+
+            if (hasChargers) {
+                availableChargers = station.chargers.filter(charger => 
+                    charger.charger_status === 'open' && 
+                    charger.connector_types && 
+                    Array.isArray(charger.connector_types) &&
+                    charger.connector_types.some(connector => connector.status === 'available')
+                ).length;
+
+                totalChargers = station.chargers.length;
+            }
+
+            return {
+                ...station,
+                available_chargers: availableChargers,
+                total_chargers: totalChargers,
+                district_name: station.district?.name || 'Unknown District'
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: stationsWithChargerCount,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching stations for support officer:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -812,4 +911,5 @@ module.exports = {
     toggleFavoriteStation,
     getFavoriteStations,
     getOwnerStations,
+    getAllStationsForSupportOfficer
 }
