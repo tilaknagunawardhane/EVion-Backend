@@ -27,7 +27,7 @@ router.put('/refund-reports/:type/:id/refund', updateRefund);
 router.get('/get-evowner-reports/:userId', getEvOwnerReports);
 router.get('/get-evowner-report-details/:userId/:type/:reportId', getEvOwnerReportDetails);
 
-router.get('/get-stationowner-reports/:stationOwnerId', getStationOwnerReports);
+router.get('/get-stationowner-reports/:userId', getStationOwnerReports);
 router.get('/get-stationowner-report-details/:stationOwnerId/:type/:reportId', getStationOwnerReportDetails);
 
 module.exports = router;

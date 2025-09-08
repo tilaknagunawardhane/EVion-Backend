@@ -4,7 +4,8 @@ const EvOwner = require('../models/evOwnerModel');
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
-const Booking2 = require('../models/booking2Model'); // Import the new booking model
+const StationOwner = require('../models/stationOwnerModel');
+const Booking2 = require('../models/booking2Model'); 
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
 const { notifyNewReport } = require('../middlewares/notificationMiddleware')
 
@@ -1184,7 +1185,7 @@ const getEvOwnerReportDetails = asyncHandler(async (req, res) => {
 
 const getStationOwnerReports = asyncHandler(async (req, res) => {
     try {
-        const { stationOwnerId } = req.params;
+        const { userId } = req.params;
         const { status, type, page = 1, limit = 10, search } = req.query;
 
         const stationOwnerExist = await StationOwner.findById(userId);
@@ -1196,7 +1197,7 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
         }
 
         const stations = await PartneredChargingStation.find({
-            station_owner_id: stationOwnerId
+            station_owner_id: userId
         }).select('_id station_name');
 
         if (!stations || stations.length === 0) {
@@ -1209,9 +1210,17 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
         const stationIds = stations.map(station => station._id);
         let stationQuery = { station_id: { $in: stationIds } };
         let chargerQuery = { station_id: { $in: stationIds } };
-        let bookingQuery = {
-            'booking_id.station_id': { $in: stationIds }
+        let bookingQuery = {};
+        // First get all bookings for these stations
+        const stationBookings = await Booking2.find({
+            charging_station_id: { $in: stationIds }
+        }).select('_id');
+        
+        const bookingIds = stationBookings.map(booking => booking._id);
+        bookingQuery = {
+            booking_id: { $in: bookingIds }
         }
+
 
         if (status && status !== 'all') {
             stationQuery.status = status,
@@ -1264,6 +1273,8 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
                         .lean(),
                     ChargerReport.countDocuments(chargerQuery)
                 ]);
+                console.log("reports charger", reports)
+
                 break;
 
             case 'bookings':
@@ -1283,6 +1294,7 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
                         .lean(),
                     BookingReport.countDocuments(bookingQuery)
                 ]);
+                console.log("reports booking", reports)
                 break;
 
             default:
@@ -1315,9 +1327,9 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
                     .slice((page - 1) * limit, page * limit);
 
                 totalCount = await Promise.all([
-                    stationReports.countDocuments(stationQuery),
-                    chargerReports.countDocuments(chargerQuery),
-                    bookingReports.countDocuments(bookingQuery)
+                    StationReport.countDocuments(stationQuery),
+                    ChargerReport.countDocuments(chargerQuery),
+                    BookingReport.countDocuments(bookingQuery)
                 ]).then(counts => counts.reduce((sum, count) => sum + count, 0));
                 break;
         }
@@ -1342,6 +1354,8 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
             return baseReport;
         })
 
+        // console.log("Booking count",  BookingReport.countDocuments(bookingQuery));
+        // console.log("Formatted Reports: ", formattedReports)
         res.status(200).json({
             success: true,
             data: formattedReports,
@@ -1367,7 +1381,7 @@ const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerId, reportId, type } = req.params;
 
-        console.log('Fetching report details for station owner:', stationOwnerId, 'reportId:', reportId, 'type:', type);
+        // console.log('Fetching report details for station owner:', stationOwnerId, 'reportId:', reportId, 'type:', type);
 
         if (!stationOwnerId || !reportId || !type) {
             return res.status(400).json({
