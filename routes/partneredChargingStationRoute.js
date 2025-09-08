@@ -6,7 +6,8 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     toggleFavoriteStation, 
     getFavoriteStations, 
     getOwnerStations,
-    getAllStationsForSupportOfficer
+    getAllStationsForSupportOfficer,
+    getStationDetailsForSupportOfficer
  } = require('../controllers/partneredChargingStationController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -22,5 +23,6 @@ router.post('/toggle-favorite/:stationId', toggleFavoriteStation);
 router.get('/favorites/:userId', getFavoriteStations);
 router.get('/owner-stations', getOwnerStations);
 router.get('/support-officer/stations', getAllStationsForSupportOfficer);
+router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
 
 module.exports = router;
