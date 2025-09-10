@@ -983,6 +983,103 @@ const getStationChargers = asyncHandler(async (req, res) => {
     }
 });
 
+const updateCharger = asyncHandler(async (req, res) => {
+  try {
+    const { stationId, chargerId } = req.params;
+    const stationOwnerID = req.query.stationOwnerId;
+    const updateData = req.body;
+
+    if (!stationOwnerID) {
+      return res.status(400).json({
+        success: false,
+        message: 'Station owner ID is required'
+      });
+    }
+
+    // Find station
+    const station = await PartneredChargingStation.findOne({
+      _id: stationId,
+      station_owner_id: stationOwnerID
+    });
+
+    if (!station) {
+      return res.status(404).json({
+        success: false,
+        message: 'Station not found'
+      });
+    }
+
+    // Find charger inside station
+    const charger = station.chargers.id(chargerId);
+    if (!charger) {
+      return res.status(404).json({
+        success: false,
+        message: 'Charger not found'
+      });
+    }
+
+    // Update fields
+    charger.charger_name = updateData.charger_name || charger.charger_name;
+    charger.power_type = updateData.power_type || charger.power_type;
+    charger.max_power_output = updateData.max_power_output || charger.max_power_output;
+    charger.price = updateData.price || charger.price;
+    charger.charger_status = updateData.charger_status || charger.charger_status;
+
+    if (Array.isArray(updateData.connector_types)) {
+      charger.connector_types = updateData.connector_types.map((ct, index) => ({
+        connector: ct.connector, // must be ObjectId
+        status: ct.status ?? charger.connector_types[index]?.status
+      }));
+    }
+
+    await station.save();
+
+    // Re-fetch with population
+    const updatedStation = await PartneredChargingStation.findById(stationId)
+  .populate('chargers.connector_types.connector', 'type_name');
+
+
+    const updatedCharger = updatedStation.chargers.id(chargerId);
+    if (!updatedCharger) {
+      return res.status(404).json({
+        success: false,
+        message: 'Updated charger not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        _id: updatedCharger._id.toString(),
+        charger_name: updatedCharger.charger_name,
+        power_type: updatedCharger.power_type,
+        max_power_output: updatedCharger.max_power_output,
+        price: updatedCharger.price,
+        charger_status: updatedCharger.charger_status,
+        connector_types: Array.isArray(updatedCharger.connector_types)? updatedCharger.connector_types.map(ct => ({
+            connector: {
+                _id: ct.connector?._id?.toString(),
+                type_name: ct.connector?.type_name || 'N/A'
+            },
+            status: ct.status || 'unavailable'
+        })) : [],
+        createdAt: updatedCharger.createdAt,
+        updatedAt: updatedCharger.updatedAt
+      },
+    });
+  } catch (error) {
+    console.error('Error updating charger:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating charger',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+
+
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -995,5 +1092,6 @@ module.exports = {
     getFavoriteStations,
     getOwnerStations,
     getStationById,
-    getStationChargers
+    getStationChargers,
+    updateCharger
 }
