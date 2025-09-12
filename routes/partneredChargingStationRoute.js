@@ -1,7 +1,15 @@
 const express = require('express');
 const router = express.Router();
 
-const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, getStationForEdit, getStationDetails, toggleFavoriteStation, getFavoriteStations, getOwnerStations, getStationById, getStationChargers, updateCharger } = require('../controllers/partneredChargingStationController');
+const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, getStationForEdit, 
+    getStationDetails, 
+    toggleFavoriteStation, 
+    getFavoriteStations, 
+    getOwnerStations,
+    getStationById, getStationChargers, updateCharger,
+    getAllStationsForSupportOfficer,
+    getStationDetailsForSupportOfficer
+ } = require('../controllers/partneredChargingStationController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 // router.get('/check-stations', authMiddleware(['station-owner'], ['station-owner']), checkStationsExist);
@@ -18,5 +26,7 @@ router.get('/owner-stations', getOwnerStations);
 router.get('/station/:stationId', getStationById);
 router.get('/station/:stationId/chargers', getStationChargers);
 router.put('/station/:stationId/update-charger/:chargerId', updateCharger);
+router.get('/support-officer/stations', getAllStationsForSupportOfficer);
+router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
 
 module.exports = router;
