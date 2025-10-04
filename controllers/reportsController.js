@@ -5,7 +5,7 @@ const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
 const StationOwner = require('../models/stationOwnerModel');
-const Booking2 = require('../models/booking2Model'); 
+const Booking2 = require('../models/booking2Model');
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
 const { notifyNewReport } = require('../middlewares/notificationMiddleware')
 
@@ -1215,7 +1215,7 @@ const getStationOwnerReports = asyncHandler(async (req, res) => {
         const stationBookings = await Booking2.find({
             charging_station_id: { $in: stationIds }
         }).select('_id');
-        
+
         const bookingIds = stationBookings.map(booking => booking._id);
         bookingQuery = {
             booking_id: { $in: bookingIds }
@@ -1391,8 +1391,8 @@ const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
         }
 
         // First verify the station owner owns the station related to this report
-        const stations = await PartneredChargingStation.find({ 
-            station_owner_id: stationOwnerId 
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: stationOwnerId
         }).select('_id');
 
         if (!stations || stations.length === 0) {
@@ -1407,25 +1407,25 @@ const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
 
         switch (type) {
             case 'station':
-                report = await StationReport.findOne({ 
-                    _id: reportId, 
-                    station_id: { $in: stationIds } 
+                report = await StationReport.findOne({
+                    _id: reportId,
+                    station_id: { $in: stationIds }
                 })
-                .populate('user_id', 'name email contact_number')
-                .populate('station_id', 'station_name address city district station_status')
-                .populate('resolved_by', 'name email')
-                .lean();
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
                 break;
 
             case 'charger':
-                report = await ChargerReport.findOne({ 
-                    _id: reportId, 
-                    station_id: { $in: stationIds } 
+                report = await ChargerReport.findOne({
+                    _id: reportId,
+                    station_id: { $in: stationIds }
                 })
-                .populate('user_id', 'name email contact_number')
-                .populate('station_id', 'station_name address city district station_status')
-                .populate('resolved_by', 'name email')
-                .lean();
+                    .populate('user_id', 'name email contact_number')
+                    .populate('station_id', 'station_name address city district station_status')
+                    .populate('resolved_by', 'name email')
+                    .lean();
 
                 // Get charger details
                 if (report && report.station_id) {
@@ -1451,20 +1451,20 @@ const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
                 break;
 
             case 'booking':
-                report = await BookingReport.findOne({ 
-                    _id: reportId 
+                report = await BookingReport.findOne({
+                    _id: reportId
                 })
-                .populate('user_id', 'name email contact_number')
-                .populate('resolved_by', 'name email')
-                .populate({
-                    path: 'booking_id',
-                    populate: {
-                        path: 'charging_station_id',
-                        select: 'station_name address city district station_status',
-                        match: { _id: { $in: stationIds } }
-                    }
-                })
-                .lean();
+                    .populate('user_id', 'name email contact_number')
+                    .populate('resolved_by', 'name email')
+                    .populate({
+                        path: 'booking_id',
+                        populate: {
+                            path: 'charging_station_id',
+                            select: 'station_name address city district station_status',
+                            match: { _id: { $in: stationIds } }
+                        }
+                    })
+                    .lean();
 
                 // Check if the booking station belongs to this owner
                 if (!report || !report.booking_id || !report.booking_id.charging_station_id) {
@@ -1555,6 +1555,163 @@ const getStationOwnerReportDetails = asyncHandler(async (req, res) => {
     }
 });
 
+//Support Officer Stats
+const getSupportOfficerStats = asyncHandler(async (req, res) => {
+    try {
+        const currentDate = new Date();
+
+        const startOfWeek = new Date(currentDate);
+        startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const endOfWeek = new Date(currentDate);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        const [
+            totalStationReports,
+            totalChargerReports,
+            totalBookingReports,
+            unresolvedStationReports,
+            unresolvedChargerReports,
+            unresolvedBookingReports,
+            resolvedStationReports,
+            resolvedChargerReports,
+            resolvedBookingReports,
+            rejectedStationReports,
+            rejectedChargerReports,
+            rejectedBookingReports
+        ] = await Promise.all([
+            //Total
+            StationReport.countDocuments(),
+            ChargerReport.countDocuments(),
+            BookingReport.countDocuments(),
+
+            //Unresolved
+            StationReport.countDocuments({ status: 'under-review' }),
+            ChargerReport.countDocuments({ status: 'under-review' }),
+            BookingReport.countDocuments({ status: 'under-review' }),
+
+            //Resolved
+            StationReport.countDocuments({ status: 'resolved' }),
+            ChargerReport.countDocuments({ status: 'resolved' }),
+            BookingReport.countDocuments({ status: 'resolved' }),
+
+            //Reject
+            StationReport.countDocuments({ status: 'rejected' }),
+            ChargerReport.countDocuments({ status: 'rejected' }),
+            BookingReport.countDocuments({ status: 'rejected' })
+        ]);
+
+        //This week
+        const [
+            weeklyStationReports,
+            weeklyChargerReports,
+            weeklyBookingReports
+        ] = await Promise.all([
+            StationReport.countDocuments({
+                createdAt: { $gte: startOfWeek, $lte: endOfWeek }
+            }),
+            ChargerReport.countDocuments({
+                createdAt: { $gte: startOfWeek, $lte: endOfWeek }
+            }),
+            BookingReport.countDocuments({
+                createdAt: { $gte: startOfWeek, $lte: endOfWeek }
+            })
+        ]);
+
+        //This month
+        const [
+            monthlyResolvedStationReports,
+            monthlyResolvedChargerReports,
+            monthlyResolvedBookingReports
+        ] = await Promise.all([
+            StationReport.countDocuments({
+                status: 'resolved',
+                resolved_at: { $gte: startOfMonth, $lte: currentDate }
+            }),
+            ChargerReport.countDocuments({
+                status: 'resolved',
+                resolved_at: { $gte: startOfMonth, $lte: currentDate }
+            }),
+            BookingReport.countDocuments({
+                status: 'resolved',
+                resolved_at: { $gte: startOfMonth, $lte: currentDate }
+            })
+        ]);
+
+        const totalReports = totalStationReports + totalBookingReports + totalChargerReports;
+        const totalUnresolved = unresolvedStationReports + unresolvedChargerReports + unresolvedBookingReports;
+        const totalResolved = resolvedStationReports + resolvedChargerReports + resolvedBookingReports;
+        const totalRejected = rejectedStationReports + rejectedChargerReports + rejectedBookingReports;
+        const totalWeeklyReports = weeklyStationReports + weeklyChargerReports + weeklyBookingReports;
+        const totalMonthlyResolved = monthlyResolvedStationReports + monthlyResolvedChargerReports + monthlyResolvedBookingReports;
+
+        const stats = {
+            overview: {
+                totalReports,
+                totalUnresolved,
+                totalResolved,
+                totalRejected
+            },
+
+            weekly: {
+                total: totalWeeklyReports,
+                breakdown: {
+                    stationReports: weeklyStationReports,
+                    chargerReports: weeklyChargerReports,
+                    bookingReports: weeklyBookingReports
+                }
+            },
+
+            monthly: {
+                totalResolved: totalMonthlyResolved,
+                breakdown: {
+                    stationReports: monthlyResolvedStationReports,
+                    chargerReports: monthlyResolvedChargerReports,
+                    bookingReports: monthlyResolvedBookingReports
+                }
+            },
+
+            detailedCounts: {
+                stationReports: {
+                    total: totalStationReports,
+                    unresolved: unresolvedStationReports,
+                    resolved: resolvedStationReports,
+                    rejected: rejectedStationReports
+                },
+                chargerReports: {
+                    total: totalChargerReports,
+                    unresolved: unresolvedChargerReports,
+                    resolved: resolvedChargerReports,
+                    rejected: rejectedChargerReports
+                },
+                bookingReports: {
+                    total: totalBookingReports,
+                    unresolved: unresolvedBookingReports,
+                    resolved: resolvedBookingReports,
+                    rejected: rejectedBookingReports
+                }
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            message: 'Support officer stats retrieved successfully',
+            data: stats
+        });
+    }
+    catch (error) {
+        console.error('Error fetching support officer stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching support officer stats',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+
+})
+
 module.exports = {
     submitStationReport,
     submitChargerReport,
@@ -1567,5 +1724,6 @@ module.exports = {
     getEvOwnerReports,
     getEvOwnerReportDetails,
     getStationOwnerReports,
-    getStationOwnerReportDetails
+    getStationOwnerReportDetails,
+    getSupportOfficerStats
 }
