@@ -1082,6 +1082,84 @@ const updateCharger = asyncHandler(async (req, res) => {
     }
 });
 
+// Add a new charger to a station
+const addChargerToStation = asyncHandler(async (req, res) => {
+    
+    const stationId = req.params.stationId; 
+    
+    const { stationOwnerID, ...chargerData } = req.body; 
+
+    // Validation
+    
+    if (!stationOwnerID) {
+        return res.status(400).json({
+            success: false,
+            message: 'Station owner ID is required'
+        });
+    }
+
+    if (!chargerData.charger_name || !chargerData.power_type || !chargerData.max_power_output || !chargerData.price || !chargerData.connector_types || chargerData.connector_types.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Missing required fields for charger: name, power type, max output, price, and at least one connector.'
+        });
+    }
+    
+    const station = await PartneredChargingStation.findOne({
+        _id: stationId,
+        station_owner_id: stationOwnerID
+    });
+
+    if (!station) {
+        return res.status(404).json({
+            success: false,
+            message: 'Charging station not found or not owned by this user.'
+        });
+    }
+
+    try {
+        
+        const newCharger = {
+            ...chargerData,
+            
+            connector_types: chargerData.connector_types.map(ct => ({
+                connector: ct.connector,
+                status: ct.status || 'unavailable'
+            })),
+            
+            max_power_output: parseFloat(chargerData.max_power_output),
+            price: parseFloat(chargerData.price)
+        };
+        
+        // Push the new charger object into the chargers array
+        station.chargers.push(newCharger);
+
+        // Save the updated station document
+        const updatedStation = await station.save();
+        
+        // Find the newly added charger subdocument's ID to return
+        // It's the last element of the updated array.
+        const addedCharger = updatedStation.chargers[updatedStation.chargers.length - 1];
+
+        // Optional: Send a notification/message to Admin about the new charger request
+        await sendAutoMessageToAdmin(stationOwnerID, addedCharger, 'charger_added');
+
+        res.status(201).json({
+            success: true,
+            message: 'Charger added successfully and is now pending review.',
+            data: addedCharger // Return the newly created charger subdocument
+        });
+
+    } catch (error) {
+        
+        console.error('Error adding new charger:', error);
+        res.status(400).json({
+            success: false,
+            message: error.message || 'Validation or database error when adding charger.'
+        });
+    }
+});
+
 // Get stations for support officer's table
 const getAllStationsForSupportOfficer = asyncHandler(async (req, res) => {
     try {
@@ -1329,6 +1407,7 @@ module.exports = {
     getStationById,
     getStationChargers,
     updateCharger,
+    addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer
 }

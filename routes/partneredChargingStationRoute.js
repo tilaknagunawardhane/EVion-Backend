@@ -7,6 +7,7 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     getFavoriteStations, 
     getOwnerStations,
     getStationById, getStationChargers, updateCharger,
+    addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer
  } = require('../controllers/partneredChargingStationController');
@@ -26,6 +27,7 @@ router.get('/owner-stations', getOwnerStations);
 router.get('/station/:stationId', getStationById);
 router.get('/station/:stationId/chargers', getStationChargers);
 router.put('/station/:stationId/update-charger/:chargerId', updateCharger);
+router.post('/station/:stationId/add-charger', addChargerToStation);
 router.get('/support-officer/stations', getAllStationsForSupportOfficer);
 router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
 
