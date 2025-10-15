@@ -20,20 +20,16 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 
 // Routes
-// app.use('/api/users', require('./routes/userRoutes'));
 const evOwnerRoutes = require('./routes/evOwnerRoute');
 const bookingRoutes = require('./routes/bookingRoute');
 const vehicleRoutes = require('./routes/vehicleRoute');
 const commonRoutes = require('./routes/commonRoute');
 const partneredChargingStationRoutes = require('./routes/partneredChargingStationRoute');
 const adminRoutes = require('./routes/adminRoute');
-// const commonRoutes = require('./routes/commonRoute');
 const authRoutes = require('./routes/authRoute');
 const reportsRoutes = require('./routes/reportsRoute');
-
-// const adminRoutes = require('./routes/adminRoutes');
-// const evOwnerRoutes = require('./routes/evOwnerRoutes');
-// const stationOwnerRoutes = require('./routes/stationOwnerRoutes');
+const chatRoutes = require('./routes/chatRoute');
+const notificationRoutes = require('./routes/notificationRoute');
 
 app.use('/api/evowners', evOwnerRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -42,11 +38,10 @@ app.use('/api/common', commonRoutes);
 app.use('/api/stations', partneredChargingStationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/chats', chatRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use('/api/auth', authRoutes);
-// app.use('/api/admin', adminRoutes);
-// app.use('/api/ev-owner', evOwnerRoutes);
-// app.use('/api/station-owner', stationOwnerRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

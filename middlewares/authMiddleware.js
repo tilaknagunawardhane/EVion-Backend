@@ -3,6 +3,7 @@ const { verifyToken } = require('../config/jwt');
 const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
+const SupportOfficer = require('../models/supportOfficerModel');
 
 const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req, res, next) => {
   try {
@@ -30,6 +31,9 @@ const authMiddleware = (allowedRoles = [], allowedUserTypes = []) => async (req,
         break;
       case 'evowner':
         user = await EvOwner.findById(decoded.id);
+        break;
+      case 'supportofficer':
+        user = await SupportOfficer.findById(decoded.id);
         break;
       case 'stationowner':
         user = await StationOwner.findById(decoded.id);
