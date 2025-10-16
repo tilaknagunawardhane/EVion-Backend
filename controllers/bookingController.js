@@ -1,6 +1,7 @@
 const Booking = require('../models/bookingModel');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
 const EvOwner = require('../models/evOwnerModel');
+const WalletService = require('../services/walletService');
 
 const asyncHandler = require('express-async-handler');
 const dayjs = require('dayjs');
@@ -12,6 +13,8 @@ const mongoose = require('mongoose');
 const { getVehicleById, getMakeName, getModelName, getPartneredChargingStation, getConnectorById, getVehiclesByOwner } = require('../utils/helpers');
 
 const slot_size = process.env.SLOT_SIZE;
+const BOOKING_FEE = 100;
+
 
 // Extend dayjs with UTC plugin
 dayjs.extend(utc);
@@ -19,33 +22,47 @@ dayjs.extend(duration);
 dayjs.extend(timezone);
 
 function formatDuration(minutes) {
-  const dur = dayjs.duration(minutes, 'minutes');
-  const hours = dur.hours();
-  const mins = dur.minutes();
+    const dur = dayjs.duration(minutes, 'minutes');
+    const hours = dur.hours();
+    const mins = dur.minutes();
 
-  const hourStr = hours > 0 ? `${hours} Hr${hours > 1 ? 's' : ''}` : '';
-  const minStr = mins > 0 ? `${mins} Min${mins > 1 ? 's' : ''}` : '';
+    const hourStr = hours > 0 ? `${hours} Hr${hours > 1 ? 's' : ''}` : '';
+    const minStr = mins > 0 ? `${mins} Min${mins > 1 ? 's' : ''}` : '';
 
-  return [hourStr, minStr].filter(Boolean).join(' ');
+    return [hourStr, minStr].filter(Boolean).join(' ');
 }
 
 const addBooking = asyncHandler(async (req, res) => {
-    let {ev_user_id, vehicle_id, charging_station_id, booking_date_time, no_of_slots, connector_type_id} = req.body;
+    let { ev_user_id, vehicle_id, charging_station_id, booking_date_time, no_of_slots, connector_type_id } = req.body;
     console.log(req.body);
 
-    if(!ev_user_id || !vehicle_id || !charging_station_id || !booking_date_time || !no_of_slots || !connector_type_id){
-        res.status(400);      
+    if (!ev_user_id || !vehicle_id || !charging_station_id || !booking_date_time || !no_of_slots || !connector_type_id) {
+        res.status(400);
         throw new Error('Please fill in all booking fields');
+    }
+
+    const hasSufficientBalance = await WalletService.hasSufficientBalance(
+        ev_user_id,
+        BOOKING_FEE
+    );
+
+    if (!hasSufficientBalance) {
+        return res.status(400).json({
+            success: false,
+            message: 'Insufficient wallet balance. Please top up your wallet.',
+            required_amount: BOOKING_FEE,
+            current_balance: await WalletService.getBalance(ev_user_id)
+        });
     }
 
     // Fetch station with chargers + connectors populated
     const station = await PartneredChargingStation.findById(charging_station_id)
         .populate({
-        path: 'chargers',
-        populate: { path: 'connectors' }
+            path: 'chargers',
+            populate: { path: 'connectors' }
         });
 
-    console.log('Station: ', station);
+    // console.log('Station: ', station);
 
     if (!station) {
         res.status(404);
@@ -66,29 +83,29 @@ const addBooking = asyncHandler(async (req, res) => {
     }
 
     if (!charger_id) {
-    res.status(400);
-    throw new Error('No charger found for the given connector');
+        res.status(400);
+        throw new Error('No charger found for the given connector');
     }
 
-    console.log('booking_date_time: ',booking_date_time);
+    // console.log('booking_date_time: ', booking_date_time);
     // console.log('timezone: ',new Date().getTimezoneOffset());
 
     // Force it to IST (+5:30)
     booking_date_time = dayjs(booking_date_time).utcOffset(330, true); // 330 minutes = 5.5 hours
-    console.log('booking_date_time: ',booking_date_time.format());
-    
-    if (booking_date_time.isValid()){
+    // console.log('booking_date_time: ', booking_date_time.format());
+
+    if (booking_date_time.isValid()) {
 
         booking_date = booking_date_time.startOf('day'); // start time of the day (midnight) in IST
         start_time = booking_date_time;  //in IST
-        end_time = booking_date_time.add(slot_size*no_of_slots, 'minute'); // in IST
-        
-        console.log('booking_date: ',booking_date.format());
-        console.log('start_time: ',start_time.format());
-        console.log('end_time: ',end_time.format());
+        end_time = booking_date_time.add(slot_size * no_of_slots, 'minute'); // in IST
+
+        // console.log('booking_date: ', booking_date.format());
+        // console.log('start_time: ', start_time.format());
+        // console.log('end_time: ', end_time.format());
 
     }
-    else{
+    else {
         console.log('Invalid Date!!');
     }
 
@@ -104,11 +121,23 @@ const addBooking = asyncHandler(async (req, res) => {
         start_time,
         end_time,
         no_of_slots,
-        status: 'upcoming'
+        status: 'upcoming',
+        cost: BOOKING_FEE
     });
 
-    if (booking){
-        res.status(201).json({ 
+
+    if (booking) {
+
+        // Charge booking fee from wallet
+        await WalletService.chargeBookingFee(
+            ev_user_id,
+            booking._id,
+            BOOKING_FEE,
+            charging_station_id,
+            station.station_owner_id
+        );
+
+        res.status(201).json({
             _id: booking._id,
             ev_user_id: booking.ev_user_id,
             vehicle_id: booking.vehicle_id,
@@ -119,9 +148,10 @@ const addBooking = asyncHandler(async (req, res) => {
             start_time: booking.start_time,
             end_time: booking.end_time,
             no_of_slots: booking.no_of_slots,
-            status: booking.status
+            status: booking.status,
+            wallet_balance: await WalletService.getBalance(ev_user_id)
         });
-    }else {
+    } else {
         res.status(400);
         throw new Error('Invalid');
     }
@@ -129,14 +159,14 @@ const addBooking = asyncHandler(async (req, res) => {
 });
 
 
-const getBookedSlots = asyncHandler(async (req,res) => {
+const getBookedSlots = asyncHandler(async (req, res) => {
     console.log('req.body: ', req.body);
 
-    let {date} = req.body;
+    let { date } = req.body;
     date = dayjs.utc(date);
     console.log('date: ', date.format());
-    
-    if (!date){
+
+    if (!date) {
         res.status(400);
         throw new Error('No date');
     }
@@ -144,77 +174,78 @@ const getBookedSlots = asyncHandler(async (req,res) => {
     const bookedSlots = await Booking.find({ booking_date: date })
     const slotsSeperately = [];
 
-    if(bookedSlots.length >= 0 ){
-            bookedSlots.map(booking => {
-            
-                if(booking.no_of_slots > 1){
-                    const wholeSlotStartTime = booking.start_time;
-                    
-                    for (let i=0; i<booking.no_of_slots; i++){                
-                        slotsSeperately.push({
-                            _id: booking._id,
-                            booking_date: booking.booking_date,
-                            start_time: dayjs(wholeSlotStartTime).add(slot_size*i, 'minute').format("HH:mm:ss"),
-                            end_time: dayjs(wholeSlotStartTime).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
-                        })
-                    }
+    if (bookedSlots.length >= 0) {
+        bookedSlots.map(booking => {
 
-                }else{
+            if (booking.no_of_slots > 1) {
+                const wholeSlotStartTime = booking.start_time;
+
+                for (let i = 0; i < booking.no_of_slots; i++) {
                     slotsSeperately.push({
                         _id: booking._id,
                         booking_date: booking.booking_date,
-                        start_time: dayjs(wholeSlotStartTime).add(slot_size*i, 'minute').format("HH:mm:ss"),
-                        end_time: dayjs(wholeSlotStartTime).add(slot_size*(i+1), 'minute').format("HH:mm:ss")
+                        start_time: dayjs(wholeSlotStartTime).add(slot_size * i, 'minute').format("HH:mm:ss"),
+                        end_time: dayjs(wholeSlotStartTime).add(slot_size * (i + 1), 'minute').format("HH:mm:ss")
                     })
                 }
-            })
-    }else{
+
+            } else {
+                slotsSeperately.push({
+                    _id: booking._id,
+                    booking_date: booking.booking_date,
+                    start_time: dayjs(wholeSlotStartTime).add(slot_size * i, 'minute').format("HH:mm:ss"),
+                    end_time: dayjs(wholeSlotStartTime).add(slot_size * (i + 1), 'minute').format("HH:mm:ss")
+                })
+            }
+        })
+    } else {
         return res.status(400).json({ message: 'Invalid' });
     }
     res.status(200).json(slotsSeperately);
     // console.log(slotsSeperately);
 });
 
-const getUserUpcomingBookings = asyncHandler(async (req,res) => {
+const getUserUpcomingBookings = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
-    let {ev_user_id} = req.query;
-    
-    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+    let { ev_user_id } = req.query;
+
+    if (!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)) {
         return res.status(400).json({ message: 'Invalid EV user ID' });
     }
     ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
 
     console.log('ev_user_id: ', ev_user_id);
 
-    let upcomingBookings = await Booking.find({ 
+    let upcomingBookings = await Booking.find({
         ev_user_id,
-        status: 'upcoming' })
-    .populate({
-        path: 'charging_station_id',
-        populate: {
-            path: 'chargers.connector_types.connector', // deep populate
-            model: 'connector'
-        }
+        status: 'upcoming'
     })
-    .populate({
-        path: 'ev_user_id',
-        populate: {
-            path: 'vehicles.make',
-            model: 'vehiclemake'
-        }
-    })
-    .populate({
-        path: 'ev_user_id',
-        populate: {
-            path: 'vehicles.model',
-            model: 'vehiclemodel'
-        }
-    })
-    ;
+        .populate({
+            path: 'charging_station_id',
+            populate: {
+                path: 'chargers.connector_types.connector', // deep populate
+                model: 'connector'
+            }
+        })
+        .populate({
+            path: 'ev_user_id',
+            populate: {
+                path: 'vehicles.make',
+                model: 'vehiclemake'
+            }
+        })
+        .populate({
+            path: 'ev_user_id',
+            populate: {
+                path: 'vehicles.model',
+                model: 'vehiclemodel'
+            }
+        })
+        ;
 
-    console.log('upcomingBookings: ', upcomingBookings);
+    // console.log('upcomingBookings: ', upcomingBookings);
 
-    if(upcomingBookings.length === 0){
+    if (upcomingBookings.length === 0) {
         return res.json({ message: 'No upcoming Bookings' });
     }
 
@@ -225,62 +256,63 @@ const getUserUpcomingBookings = asyncHandler(async (req,res) => {
         const vehicle = booking.ev_user_id?.vehicles.id(booking.vehicle_id);
 
         return {
-        ...booking.toObject?.() ?? booking,
-        charger,
-        connector: connector.connector,
-        vehicle,
-        dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
-        duration: formatDuration(booking.no_of_slots * slot_size),
-        startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
-        endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+            ...booking.toObject?.() ?? booking,
+            charger,
+            connector: connector.connector,
+            vehicle,
+            dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
+            duration: formatDuration(booking.no_of_slots * slot_size),
+            startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+            endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         }
     });
 
-    console.log('upcomingBookings: ', upcomingBookings);
+    // console.log('upcomingBookings: ', upcomingBookings);
     return res.status(200).json(upcomingBookings);
-    
+
 });
 
 const getUserCompletedBookings = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
-    let {ev_user_id} = req.query;
-    
-    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+    let { ev_user_id } = req.query;
+
+    if (!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)) {
         return res.status(400).json({ message: 'Invalid EV user ID' });
     }
     ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
 
     console.log('ev_user_id: ', ev_user_id);
 
-    let completedBookings = await Booking.find({ 
+    let completedBookings = await Booking.find({
         ev_user_id,
-        status: 'completed' })
-    .populate({
-        path: 'charging_station_id',
-        populate: {
-            path: 'chargers.connector_types.connector', // deep populate
-            model: 'connector'
-        }
+        status: 'completed'
     })
-    .populate({
-        path: 'ev_user_id',
-        populate: {
-            path: 'vehicles.make',
-            model: 'vehiclemake'
-        }
-    })
-    .populate({
-        path: 'ev_user_id',
-        populate: {
-            path: 'vehicles.model',
-            model: 'vehiclemodel'
-        }
-    })
-    ;
+        .populate({
+            path: 'charging_station_id',
+            populate: {
+                path: 'chargers.connector_types.connector', // deep populate
+                model: 'connector'
+            }
+        })
+        .populate({
+            path: 'ev_user_id',
+            populate: {
+                path: 'vehicles.make',
+                model: 'vehiclemake'
+            }
+        })
+        .populate({
+            path: 'ev_user_id',
+            populate: {
+                path: 'vehicles.model',
+                model: 'vehiclemodel'
+            }
+        })
+        ;
 
-    console.log('completedBookings: ', completedBookings);
+    // console.log('completedBookings: ', completedBookings);
 
-    if(completedBookings.length === 0){
+    if (completedBookings.length === 0) {
         return res.json({ message: 'No completed Bookings' });
     }
 
@@ -291,27 +323,27 @@ const getUserCompletedBookings = asyncHandler(async (req, res) => {
         const vehicle = booking.ev_user_id?.vehicles.id(booking.vehicle_id);
 
         return {
-        ...booking.toObject?.() ?? booking,
-        charger,
-        connector: connector.connector,
-        vehicle,
-        dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
-        duration: formatDuration(booking.no_of_slots * slot_size),
-        startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
-        endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+            ...booking.toObject?.() ?? booking,
+            charger,
+            connector: connector.connector,
+            vehicle,
+            dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
+            duration: formatDuration(booking.no_of_slots * slot_size),
+            startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+            endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
         }
     });
 
-    console.log('completedBookings: ', completedBookings);
+    // console.log('completedBookings: ', completedBookings);
     return res.status(200).json(completedBookings);
 
 });
 
 const getOwnedVehicles = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
-    let {ev_user_id} = req.query;
+    let { ev_user_id } = req.query;
 
-    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+    if (!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)) {
         return res.status(400).json({ message: 'Invalid EV user ID' });
     }
     ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
@@ -338,21 +370,21 @@ const getOwnedVehicles = asyncHandler(async (req, res) => {
 
     // }))
 
-    console.log('owned vehicles: ', ownedVehicles);
+    // console.log('owned vehicles: ', ownedVehicles);
     return res.status(200).json(ownedVehicles);
 });
 
 const getFavouritePartneredStations = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
-    let {ev_user_id} = req.query;
-    
-    if(!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)){
+    let { ev_user_id } = req.query;
+
+    if (!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)) {
         return res.status(400).json({ message: 'Invalid EV user ID' });
     }
 
     const favouritePartneredStations = await EvOwner.findById(ev_user_id)
-    .select('favourite_stations')
-    .populate('favourite_stations');
+        .select('favourite_stations')
+        .populate('favourite_stations');
 
     console.log('favourites: ', favouritePartneredStations.favourite_stations);
 
@@ -363,16 +395,16 @@ const getConnectorsByStation = asyncHandler(async (req, res) => {
     console.log('req: ', req.query);
     let { station_id } = req.query;
 
-    if(!station_id || !mongoose.Types.ObjectId.isValid(station_id)){
-        return res.status(400).json({ message: 'Invalid station user ID'});
+    if (!station_id || !mongoose.Types.ObjectId.isValid(station_id)) {
+        return res.status(400).json({ message: 'Invalid station user ID' });
     }
 
     const station = await PartneredChargingStation.findById(station_id)
-    .populate('chargers.connector_types.connector');
+        .populate('chargers.connector_types.connector');
 
     const connectors = station.chargers.flatMap(charger => charger.connector_types);
 
-    console.log('connectors: ',connectors);
+    console.log('connectors: ', connectors);
     return res.status(200).json(connectors);
 
 

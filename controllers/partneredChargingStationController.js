@@ -9,7 +9,7 @@ const Message = require('../models/messageModel');
 const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
-const Booking2 = require('../models/booking2Model')
+const Booking2 = require('../models/bookingModel')
 
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
