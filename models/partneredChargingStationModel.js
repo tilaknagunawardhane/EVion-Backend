@@ -70,6 +70,36 @@ const chargerSchema = new mongoose.Schema({
     timestamps: true
 })
 
+const timeBlockSchema = new mongoose.Schema({
+    from: { 
+        type: String, 
+        required: true 
+    },
+    to: { 
+        type: String, 
+        required: true 
+    }
+}, { 
+    _id: false 
+});
+
+const dayScheduleSchema = new mongoose.Schema({
+    open24Hours: { 
+        type: Boolean, 
+        default: true 
+    },
+    closed: { 
+        type: Boolean, 
+        default: false 
+    },
+    timeBlocks: { 
+        type: [timeBlockSchema], 
+        default: [] 
+    }
+}, { 
+    _id: false 
+});
+
 const partneredChargingStationSchema = new mongoose.Schema({
     station_owner_id: {
         type: mongoose.Schema.Types.ObjectId,
@@ -109,6 +139,21 @@ const partneredChargingStationSchema = new mongoose.Schema({
         default: 'unavailable',
         required: true
     },
+    station_schedule: {
+        type: new mongoose.Schema({
+            monday: { type: dayScheduleSchema, default: {} },
+            tuesday: { type: dayScheduleSchema, default: {} },
+            wednesday: { type: dayScheduleSchema, default: {} },
+            thursday: { type: dayScheduleSchema, default: {} },
+            friday: { type: dayScheduleSchema, default: {} },
+            saturday: { type: dayScheduleSchema, default: {} },
+            sunday: { type: dayScheduleSchema, default: {} },
+        }, { 
+            _id: false 
+        }), // Schedule object doesn't need its own MongoDB ID
+        required: true,
+    },
+
     chargers: [chargerSchema],
     ratings: [ratingSchema]
 },

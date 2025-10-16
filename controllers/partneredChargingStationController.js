@@ -15,6 +15,16 @@ const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
 
+const defaultSchedule = {
+    monday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    tuesday:   { open24Hours: true, closed: false, timeBlocks: [] },
+    wednesday: { open24Hours: true, closed: false, timeBlocks: [] },
+    thursday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    friday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    saturday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    sunday:    { open24Hours: true, closed: false, timeBlocks: [] },
+};
+
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.body;
@@ -227,10 +237,15 @@ const createStation = asyncHandler(async (req, res) => {
             request_status: 'finished'
         });
 
+        const finalStationData = {
+            ...stationData,
+            station_schedule: stationData.station_schedule || defaultSchedule
+        };
+
         // Create station
         const newStation = await PartneredChargingStation.create({
             station_owner_id: stationOwnerID,
-            ...stationData
+            ...finalStationData // Use the data with the injected schedule
         });
 
         if (newStation) {
@@ -471,6 +486,66 @@ const updateStation = asyncHandler(async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error updating station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Update station schedule
+const updateStationSchedule = asyncHandler(async (req, res) => {
+    try {
+        const stationId = req.params.id; // Assuming the router uses ':id'
+        const { stationOwnerID, station_schedule } = req.body;
+
+        console.log(`Attempting to update schedule for station ID: ${stationId}`);
+
+        if (!stationOwnerID || !station_schedule) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID and schedule data are required.'
+            });
+        }
+        
+        // 1. Perform a precise update on only the 'station_schedule' field
+        const station = await PartneredChargingStation.findOneAndUpdate(
+            {
+                _id: stationId,
+                station_owner_id: stationOwnerID,
+            },
+            { 
+                $set: { station_schedule: station_schedule } 
+            },
+            { 
+                new: true, 
+                runValidators: true,
+                // Only validate the schedule path to avoid errors from missing general station fields
+                fields: { station_schedule: 1, _id: 1, station_owner_id: 1 }
+            }
+        );
+
+        console.log("Station Schedule Updated: ", station?.station_schedule);
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found or not owned by user.'
+            });
+        }
+
+        // Optional: Send message/notification about schedule update
+        // await sendAutoMessageToAdmin(stationOwnerID, station, 'schedule_updated'); 
+
+        res.status(200).json({
+            success: true,
+            message: 'Station schedule updated successfully',
+            data: station.station_schedule
+        });
+
+    } catch (error) {
+        console.error('Error updating station schedule:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating station schedule',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -890,6 +965,7 @@ const getStationById = asyncHandler(async (req, res) => {
             location: station.location || { lat: 0, lng: 0 },
             averageRating: Math.round(averageRating * 10) / 10,
             totalRatings: stationRatings.length,
+            station_schedule: station.station_schedule || {},
             chargers: station.chargers.map(charger => ({
                 charger_name: charger.charger_name || 'Unnamed Charger',
                 power_type: charger.power_type || 'Unknown',
@@ -1399,6 +1475,7 @@ module.exports = {
     getRequestedStations,
     deleteStation,
     updateStation,
+    updateStationSchedule,
     getStationForEdit,
     getStationDetails,
     toggleFavoriteStation,

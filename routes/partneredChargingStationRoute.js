@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, getStationForEdit, 
+const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, updateStationSchedule, getStationForEdit, 
     getStationDetails, 
     toggleFavoriteStation, 
     getFavoriteStations, 
@@ -20,6 +20,7 @@ router.post('/get-request-stations', getRequestedStations);
 router.delete('/delete-station/:id', deleteStation);
 router.post('/edit-station/:id', getStationForEdit);
 router.put('/update-station/:id', updateStation);
+router.put('/update-station-schedule/:id', updateStationSchedule);
 router.post('/station-details/:stationId', getStationDetails);
 router.post('/toggle-favorite/:stationId', toggleFavoriteStation);
 router.get('/favorites/:userId', getFavoriteStations);
