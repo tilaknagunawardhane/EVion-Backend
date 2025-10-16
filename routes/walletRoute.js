@@ -20,7 +20,7 @@ router.get('/transactions/:userId', async (req, res) => {
         const { limit = 50, skip = 0 } = req.query;
         const { userId } = req.params;
 
-        console.log('Fetching transactions for user:', userId, 'limit:', limit, 'skip:', skip);
+        // console.log('Fetching transactions for user:', userId, 'limit:', limit, 'skip:', skip);
         const transactions = await WalletService.getTransactionHistory(
             userId,
             parseInt(limit),
@@ -33,7 +33,7 @@ router.get('/transactions/:userId', async (req, res) => {
 });
 
 // Initiate wallet top-up
-router.post('/wallet/topup/initiate', 
+router.post('/topup/initiate/:userId', 
     PaymentController.initiateTopUp.bind(PaymentController)
 );
 
@@ -41,5 +41,12 @@ router.post('/wallet/topup/initiate',
 router.post('/payment/notify', 
     PaymentController.handlePayHereNotify.bind(PaymentController)
 );
+
+// Card management routes (NEW)
+router.get('/cards/:userId', PaymentController.getSavedCards);
+router.post('/cards/save', PaymentController.saveCardToken);
+router.put('/cards/:cardId/default/:userId', PaymentController.setDefaultCard);
+router.delete('/cards/:cardId/:userId', PaymentController.deleteCard);
+router.post('/charge/saved-card', PaymentController.chargeWithSavedCard);
 
 module.exports = router;
