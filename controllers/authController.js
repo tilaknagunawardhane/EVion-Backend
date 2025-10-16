@@ -258,7 +258,7 @@ const registerStationOwner = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Registration successful. Account pending verification.',
+            message: 'Registration successful!',
             accessToken,
             refreshToken,
             user: stationOwnerData
