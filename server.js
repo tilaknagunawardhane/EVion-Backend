@@ -2,6 +2,9 @@ const express = require('express');
 const connectDB = require('./config/db');
 const cors = require('cors');
 require('dotenv').config();
+const ocppRoutes = require('./routes/ocppRoutes');
+
+
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
@@ -40,6 +43,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ocpp', ocppRoutes);
 
 app.use('/api/auth', authRoutes);
 

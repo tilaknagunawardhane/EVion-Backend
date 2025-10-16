@@ -31,9 +31,12 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
+    "ocpp-js": "^1.1.6",
+    "ocpp-rpc": "^2.2.1",
     "react-dayjs": "^0.3.2",
     "twilio": "^5.7.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
