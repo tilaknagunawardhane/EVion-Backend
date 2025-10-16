@@ -1,9 +1,10 @@
-// routes/ocppRoutes.js
 const express = require('express');
 const router = express.Router();
-const ocppController = require('../controllers/ocppController');
+const { startCharging, stopCharging, getData } = require('../controllers/ocppController');
 
-router.post('/start', ocppController.startCharging);
-router.post('/stop', ocppController.stopCharging);
+router.post('/start', startCharging);
+router.post('/stop', stopCharging);
+router.get('/data', getData);
+
 
 module.exports = router;

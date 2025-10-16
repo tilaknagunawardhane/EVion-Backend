@@ -3,6 +3,8 @@ const connectDB = require('./config/db');
 const cors = require('cors');
 require('dotenv').config();
 const ocppRoutes = require('./routes/ocppRoutes');
+const http = require('http'); // 👈 add
+const { Server } = require('socket.io'); 
 
 
 const cookieParser = require('cookie-parser');
@@ -20,6 +22,22 @@ app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
+// --- SOCKET.IO SETUP ---
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*', // or specify your Expo / frontend URL
+    methods: ['GET', 'POST'],
+  },
+});
+
+// make io available globally
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  console.log('Frontend connected to OCPP WebSocket:', socket.id);
+});
 
 
 // Routes
