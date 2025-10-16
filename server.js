@@ -30,7 +30,7 @@ const authRoutes = require('./routes/authRoute');
 const reportsRoutes = require('./routes/reportsRoute');
 const chatRoutes = require('./routes/chatRoute');
 
-const profileRoutes = require('./routes/profileRoute');
+
 
 
 app.use('/api/evowners', evOwnerRoutes);
@@ -40,7 +40,7 @@ app.use('/api/common', commonRoutes);
 app.use('/api/stations', partneredChargingStationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportsRoutes);
-app.use('/api/profile', profileRoutes);
+
 app.use('/api/chats', chatRoutes);
 
 app.use('/api/auth', authRoutes);

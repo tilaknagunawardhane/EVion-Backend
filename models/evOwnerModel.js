@@ -167,6 +167,7 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: false
     },
+    
     otp: otpSchema,
     vehicles: [vehicleSchema],
     favourite_stations: [{
