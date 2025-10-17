@@ -3,10 +3,10 @@ const router = express.Router();
 const WalletService = require('../services/walletService');
 const PaymentController = require('../controllers/paymentController');
 
+// Get wallet balance
 router.get('/balance/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        // console.log('Fetching wallet balance for user:', userId);
         const balance = await WalletService.getBalance(userId);
         res.json({ success: true, balance });
     } catch (error) {
@@ -20,7 +20,6 @@ router.get('/transactions/:userId', async (req, res) => {
         const { limit = 50, skip = 0 } = req.query;
         const { userId } = req.params;
 
-        // console.log('Fetching transactions for user:', userId, 'limit:', limit, 'skip:', skip);
         const transactions = await WalletService.getTransactionHistory(
             userId,
             parseInt(limit),
@@ -38,15 +37,29 @@ router.post('/topup/initiate/:userId',
 );
 
 // PayHere notification webhook (no auth - comes from PayHere)
-router.post('/payment/notify', 
+router.post('/notify', 
     PaymentController.handlePayHereNotify.bind(PaymentController)
 );
 
-// Card management routes (NEW)
-router.get('/cards/:userId', PaymentController.getSavedCards);
-router.post('/cards/save', PaymentController.saveCardToken);
-router.put('/cards/:cardId/default/:userId', PaymentController.setDefaultCard);
-router.delete('/cards/:cardId/:userId', PaymentController.deleteCard);
-router.post('/charge/saved-card', PaymentController.chargeWithSavedCard);
+// Card management routes
+router.get('/cards/:userId', 
+    PaymentController.getSavedCards.bind(PaymentController)
+);
+
+router.post('/cards/save', 
+    PaymentController.saveCardToken.bind(PaymentController)
+);
+
+router.put('/cards/:cardId/default/:userId', 
+    PaymentController.setDefaultCard.bind(PaymentController)
+);
+
+router.delete('/cards/:cardId/:userId', 
+    PaymentController.deleteCard.bind(PaymentController)
+);
+
+router.post('/charge/saved-card', 
+    PaymentController.chargeWithSavedCard.bind(PaymentController)
+);
 
 module.exports = router;

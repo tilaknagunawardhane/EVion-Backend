@@ -5,22 +5,19 @@ const EvOwner = require('../models/evOwnerModel');
 
 // PayHere Configuration
 const PAYHERE_MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID;
-const PAYHERE_MERCHANT_SECRET = process.env.PAYHERE_MERCHANT_SECRET;
+const PAYHERE_MERCHANT_SECRET = "ODAwMTEyMDQxNDI0Mjk0NzQ0MzM3NjIxMDEwNTQ3Mzc3NDc4MzQ=";
 const PAYHERE_SANDBOX = process.env.NODE_ENV !== 'production';
 
 class PaymentController {
-    
+
     // Initiate top-up
     async initiateTopUp(req, res) {
         try {
             const { userId } = req.params;
             console.log('userId', userId);
-            const { amount, save_card = false } = req.body; // Add save_card option
-            // const evOwnerId = req.user._id;
-            // const user = req.user;
+            const { amount, save_card = false } = req.body;
             const user = await EvOwner.findById(userId);
-            console.log('user', user);
-            
+
             if (!user) {
                 return res.status(404).json({ success: false, message: 'User not found' });
             }
@@ -31,16 +28,17 @@ class PaymentController {
                     message: 'Minimum top-up amount is LKR 100'
                 });
             }
-            
+
             // Generate unique order ID
             const orderId = `TOPUP_${Date.now()}_${userId}`;
-            
+
             // PayHere payment data
             const paymentData = {
+                sandbox: true, 
                 merchant_id: PAYHERE_MERCHANT_ID,
                 return_url: `${process.env.APP_URL}/payment/success`,
                 cancel_url: `${process.env.APP_URL}/payment/cancel`,
-                notify_url: `${process.env.API_URL}/api/payment/notify`,
+                notify_url: `https://6d6072b27a75.ngrok-free.app/api/wallet/notify`,
                 order_id: orderId,
                 items: 'Wallet Top-Up',
                 currency: 'LKR',
@@ -54,27 +52,41 @@ class PaymentController {
                 country: 'Sri Lanka',
                 custom_1: userId.toString(),
                 custom_2: 'topup',
-                custom_3: save_card ? 'save_card' : 'no_save' // Indicate if we should save card
+                custom_3: save_card ? 'save_card' : 'no_save'
             };
 
-            console.log('Payment Data:', paymentData);
             // If save_card is true, enable recurring
             if (save_card) {
                 paymentData.recurrence = '1 Month';
                 paymentData.duration = 'Forever';
             }
-            
+
             // Generate hash
             const hash = this.generatePayHereHash(paymentData);
             paymentData.hash = hash;
-            
+
+            console.log('Payment Data:', paymentData);
+            console.log('Generated Hash:', hash);
+            console.log('Merchant ID:', PAYHERE_MERCHANT_ID);
+            console.log('Merchant Secret exists:', !!PAYHERE_MERCHANT_SECRET);
+            console.log('Sandbox Mode:', PAYHERE_SANDBOX);
+            console.log('Required fields check:');
+            console.log('- merchant_id:', !!paymentData.merchant_id);
+            console.log('- order_id:', !!paymentData.order_id);
+            console.log('- amount:', !!paymentData.amount);
+            console.log('- currency:', !!paymentData.currency);
+            console.log('- hash:', !!paymentData.hash);
+            console.log('- return_url:', !!paymentData.return_url);
+            console.log('- cancel_url:', !!paymentData.cancel_url);
+            console.log('- notify_url:', !!paymentData.notify_url);
+
             res.json({
                 success: true,
                 payment_data: paymentData,
                 sandbox: PAYHERE_SANDBOX,
                 save_card_enabled: save_card
             });
-            
+
         } catch (error) {
             console.error('Payment initiation error:', error);
             res.status(500).json({ success: false, message: error.message });
@@ -105,7 +117,7 @@ class PaymentController {
             if (existingCard) {
                 // Update last used timestamp
                 await existingCard.updateLastUsed();
-                
+
                 return res.status(200).json({
                     success: true,
                     message: 'Card already exists',
@@ -131,7 +143,7 @@ class PaymentController {
                 if (card_holder_name) deletedCard.card_holder_name = card_holder_name;
                 if (expiry_month) deletedCard.expiry_month = expiry_month;
                 if (expiry_year) deletedCard.expiry_year = expiry_year;
-                
+
                 savedCard = await deletedCard.save();
             } else {
                 // Check if this is the first card to set as default
@@ -165,7 +177,7 @@ class PaymentController {
 
         } catch (error) {
             console.error('Save card error:', error);
-            
+
             // Handle duplicate key error
             if (error.code === 11000) {
                 return res.status(400).json({
@@ -173,7 +185,7 @@ class PaymentController {
                     message: 'Card already exists'
                 });
             }
-            
+
             res.status(500).json({ success: false, message: error.message });
         }
     }
@@ -181,10 +193,8 @@ class PaymentController {
     // Get user's saved cards
     async getSavedCards(req, res) {
         try {
-        const { userId } = req.params;
+            const { userId } = req.params;
 
-            // const evOwnerId = req.user._id;
-            
             const cards = await CardToken.getActiveCards(userId);
 
             res.json({
@@ -258,7 +268,7 @@ class PaymentController {
             // If we deleted the default card, set a new default
             if (card.is_default) {
                 const newDefaultCard = await CardToken.findOne({
-                    ev_owner_id: evOwnerId,
+                    ev_owner_id: userId,
                     status: 'active'
                 });
 
@@ -351,7 +361,9 @@ class PaymentController {
                 card_expiry,
                 method // Payment method
             } = req.body;
-            
+
+            console.log('PayHere Notification received:', req.body);
+
             // Verify hash
             const localMd5sig = this.generateMd5Hash(
                 merchant_id,
@@ -360,29 +372,46 @@ class PaymentController {
                 payhere_currency,
                 status_code
             );
-            
+
             if (localMd5sig !== md5sig) {
                 console.error('Invalid payment hash');
+                console.error('Expected:', localMd5sig);
+                console.error('Received:', md5sig);
                 return res.status(400).send('Invalid hash');
             }
-            
+
+            console.log('Hash verified successfully');
+
             // Check if payment is successful
             if (status_code === '2') {
                 const evOwnerId = custom_1;
                 const amount = parseFloat(payhere_amount);
                 const shouldSaveCard = custom_3 === 'save_card';
-                
+
+                console.log('Processing successful payment:', {
+                    evOwnerId,
+                    amount,
+                    shouldSaveCard,
+                    payment_id
+                });
+
                 // Top up wallet
                 await WalletService.topUp(evOwnerId, amount, payment_id);
-                
+
                 console.log(`Wallet topped up: ${evOwnerId} - LKR ${amount}`);
-                
+
                 // Save card token if available and requested
                 if (shouldSaveCard && customer_token && method) {
                     try {
                         const cardType = this.mapPayHereMethodToCardType(method);
                         const cardMask = card_no || `******${payment_id.slice(-4)}`;
-                        
+
+                        console.log('Saving card token:', {
+                            customer_token,
+                            cardType,
+                            cardMask
+                        });
+
                         await CardToken.findOneAndUpdate(
                             {
                                 ev_owner_id: evOwnerId,
@@ -402,17 +431,19 @@ class PaymentController {
                                 new: true
                             }
                         );
-                        
+
                         console.log(`Card token saved for user: ${evOwnerId}`);
                     } catch (cardError) {
                         console.error('Error saving card token from webhook:', cardError);
                         // Don't fail the payment if card saving fails
                     }
                 }
+            } else {
+                console.log('Payment not successful. Status code:', status_code);
             }
-            
+
             res.status(200).send('OK');
-            
+
         } catch (error) {
             console.error('Payment notification error:', error);
             res.status(500).send('Error');
@@ -427,35 +458,74 @@ class PaymentController {
             'AMEX': 'AMEX',
             'MASTERCARD': 'MASTER'
         };
-        
+
         return methodMap[method] || 'OTHER';
     }
-    
-    // Generate PayHere hash
+
+    // 🔹 Generate hash for sending to PayHere - CORRECTED VERSION
     generatePayHereHash(data) {
-        const hashString = 
-            PAYHERE_MERCHANT_ID + 
-            data.order_id + 
-            data.amount + 
+        const formattedAmount = parseFloat(data.amount).toFixed(2);
+
+        // Decode base64 secret if needed
+        let merchantSecret = PAYHERE_MERCHANT_SECRET;
+        try {
+            const decoded = Buffer.from(PAYHERE_MERCHANT_SECRET, 'base64').toString('utf8');
+            if (/^[a-zA-Z0-9]+$/.test(decoded)) {
+                merchantSecret = decoded;
+            }
+        } catch (e) { }
+
+        // ✅ Step 1: MD5 hash of merchant secret (uppercase)
+        const secretMd5 = this.getMd5Hash(merchantSecret).toUpperCase();
+
+        // ✅ Step 2: Combine all fields as per PayHere spec
+        const hashString =
+            PAYHERE_MERCHANT_ID +
+            data.order_id +
+            formattedAmount +
             data.currency +
-            this.getMd5Hash(PAYHERE_MERCHANT_SECRET);
-        
-        return this.getMd5Hash(hashString).toUpperCase();
+            secretMd5;
+
+        // ✅ Step 3: MD5 again and uppercase
+        const hash = this.getMd5Hash(hashString).toUpperCase();
+
+        console.log('PayHere hash debug:');
+        console.log('- Merchant ID:', PAYHERE_MERCHANT_ID);
+        console.log('- Order ID:', data.order_id);
+        console.log('- Amount:', formattedAmount);
+        console.log('- Currency:', data.currency);
+        console.log('- Secret MD5 (first 10):', secretMd5.substring(0, 10) + '...');
+        console.log('- Hash String (first 50):', hashString.substring(0, 50) + '...');
+        console.log('- Final Hash:', hash);
+
+        return hash;
     }
-    
-    // Generate MD5 hash for verification
+
+    // 🔹 Generate hash for verifying PayHere notify
     generateMd5Hash(merchant_id, order_id, amount, currency, status_code) {
-        const hashString = 
-            merchant_id + 
-            order_id + 
-            amount + 
-            currency + 
+        const formattedAmount = parseFloat(amount).toFixed(2);
+        let merchantSecret = PAYHERE_MERCHANT_SECRET;
+
+        try {
+            const decoded = Buffer.from(PAYHERE_MERCHANT_SECRET, 'base64').toString('utf8');
+            if (/^[a-zA-Z0-9]+$/.test(decoded)) {
+                merchantSecret = decoded;
+            }
+        } catch (e) { }
+
+        const secretMd5 = this.getMd5Hash(merchantSecret).toUpperCase();
+
+        const hashString =
+            merchant_id +
+            order_id +
+            formattedAmount +
+            currency +
             status_code +
-            this.getMd5Hash(PAYHERE_MERCHANT_SECRET);
-        
+            secretMd5;
+
         return this.getMd5Hash(hashString).toUpperCase();
     }
-    
+
     getMd5Hash(string) {
         return crypto.createHash('md5').update(string).digest('hex');
     }

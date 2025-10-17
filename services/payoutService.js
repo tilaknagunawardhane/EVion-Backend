@@ -1,6 +1,6 @@
-const StationEarnings = require('../models/StationEarnings');
-const PayoutBatch = require('../models/PayoutBatch');
-const StationOwner = require('../models/StationOwner');
+const StationEarnings = require('../models/stationEarningsModel');
+const PayoutBatch = require('../models/payoutBatchModel');
+const StationOwner = require('../models/stationOwnerModel');
 
 class PayoutService {
     
