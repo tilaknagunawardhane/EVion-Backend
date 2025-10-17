@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const EvOwner = require('../models/evOwnerModel');
+const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 
 // Inline email sender using nodemailer (previously in utils/sendEmail.js)
@@ -48,7 +49,7 @@ const sendVerificationEmail = async ({ to, subject, text, html }) => {
 const getProfile = asyncHandler(async (req, res) => {
   try {
   const { id } = req.params;
-  const user = await EvOwner.findById(id).select('name email contact_number home_address apartment street_name city district');
+  const user = await EvOwner.findById(id).select('name email contact_number home_address apartment street_name city district recovery_phone');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     return res.status(200).json({ success: true, data: user });
   } catch (error) {
@@ -236,10 +237,61 @@ const verifyEmailOtp = asyncHandler(async (req, res) => {
     }
   });
 
+  // POST /api/evowners/profile/:id/change-password
+  // body: { currentPassword, newPassword }
+  const changePassword = asyncHandler(async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) return res.status(400).json({ success: false, message: 'currentPassword and newPassword are required' });
+
+      const user = await EvOwner.findById(id).select('+password');
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) return res.status(400).json({ success: false, message: 'Current password is incorrect' });
+
+      // validate password length
+      if (newPassword.length < 8) return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
+
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(newPassword, salt);
+      await user.save();
+
+      return res.status(200).json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+      console.error('changePassword error:', error);
+      return res.status(500).json({ success: false, message: 'Error changing password' });
+    }
+  });
+
+  // POST /api/evowners/profile/:id/recovery-phone
+  // body: { recovery_phone }
+  const updateRecoveryPhone = asyncHandler(async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { recovery_phone } = req.body;
+      if (!recovery_phone) return res.status(400).json({ success: false, message: 'recovery_phone is required' });
+
+      const user = await EvOwner.findById(id);
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+      user.recovery_phone = recovery_phone;
+      await user.save();
+
+      return res.status(200).json({ success: true, message: 'Recovery phone updated', data: { recovery_phone: user.recovery_phone } });
+    } catch (error) {
+      console.error('updateRecoveryPhone error:', error);
+      return res.status(500).json({ success: false, message: 'Error updating recovery phone' });
+    }
+  });
+
 module.exports = {
   getProfile,
   updateProfile,
   sendEmailOtp,
   verifyEmailOtp,
   saveAddress
+  ,changePassword,
+  updateRecoveryPhone
 };

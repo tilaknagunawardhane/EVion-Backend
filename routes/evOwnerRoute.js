@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { registerEvOwner, loginEvOwner, sendOTP, verifyOTP, resetPassword } = require('../controllers/evOwnerController');
-const { getProfile, updateProfile, sendEmailOtp, verifyEmailOtp, saveAddress } = require('../controllers/profileController');
+const { getProfile, updateProfile, sendEmailOtp, verifyEmailOtp, saveAddress, changePassword, updateRecoveryPhone } = require('../controllers/profileController');
 
 // Route to register a new EV owner
 router.post('/register', registerEvOwner);
@@ -21,6 +21,9 @@ router.post('/profile/:id/email/send-otp', sendEmailOtp);
 router.post('/profile/:id/email/verify', verifyEmailOtp);
 // Address form route
 router.post('/profile/:id/address', saveAddress);
+// Security routes
+router.post('/profile/:id/change-password', changePassword);
+router.post('/profile/:id/recovery-phone', updateRecoveryPhone);
 
 
 
