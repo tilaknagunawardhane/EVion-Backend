@@ -168,6 +168,23 @@ const evOwnerSchema = new mongoose.Schema({
         required: false
     },
     
+    // Fields to support email-change verification flow
+    pending_email: {
+        type: String,
+        required: false,
+        default: null
+    },
+    email_otp: {
+        type: String,
+        required: false,
+        default: null
+    },
+    email_otp_time: {
+        type: Date,
+        required: false,
+        default: null
+    },
+    
     otp: otpSchema,
     vehicles: [vehicleSchema],
     favourite_stations: [{
