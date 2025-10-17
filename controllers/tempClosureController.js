@@ -1,27 +1,61 @@
 const asyncHandler = require('express-async-handler');
 const TemporaryClosure = require('../models/temporaryClosureModel');
-const PartneredChargingStation = require('../models/partneredChargingStationModel'); 
+const PartneredChargingStation = require('../models/partneredChargingStationModel');
+const Booking = require('../models/bookingModel');
 
 const createTemporaryClosure = asyncHandler(async (req, res) => {
     const { stationId } = req.params;
     const { owner_id, fromDateTime, toDateTime, reason } = req.body;
 
+    const startTime = new Date(fromDateTime);
+    const endTime = new Date(toDateTime);
+
     if (!fromDateTime || !toDateTime || !reason || !owner_id) {
         return res.status(400).json({ success: false, message: 'Missing required fields.' });
     }
 
+    // Find and Cancel Overlapping Bookings
+    const overlappingBookings = await Booking.find({
+        charging_station_id: stationId,
+        status: 'upcoming',
+        $and: [
+            { start_time: { $lt: endTime } }, // Booking starts before closure ends
+            { end_time: { $gt: startTime } }  // Closure starts before booking ends
+        ]
+    });
+
+    const cancellationDetails = {
+        status: 'cancelled',
+        cancelled_at: new Date(),
+        cancellation_reason: `Station closed due to ${reason}`,
+        cancelled_by_type: 'StationOwner', // Assuming owner_id is from StationOwner model
+        cancelled_by_id: owner_id
+    };
+
+    // Update all overlapping bookings
+    if (overlappingBookings.length > 0) {
+        // Use updateMany for atomic bulk update
+        await Booking.updateMany(
+            { _id: { $in: overlappingBookings.map(b => b._id) } },
+            { $set: cancellationDetails }
+        );
+        console.log(`Cancelled ${overlappingBookings.length} bookings due to station closure.`);
+    }
+
+    // Create Temporary Closure Record
     // Convert date strings to Date objects (Mongoose handles this automatically, but good practice)
     const newClosure = await TemporaryClosure.create({
         station_id: stationId,
         owner_id: owner_id,
-        from_date_time: new Date(fromDateTime),
-        to_date_time: new Date(toDateTime),
+        from_date_time: startTime,
+        to_date_time: endTime,
         reason: reason,
-        status: new Date(fromDateTime) <= new Date() ? 'active' : 'pending' 
+        status: startTime <= new Date() ? 'active' : 'pending' 
         // If the closure starts immediately, set status to 'active'.
         // Otherwise, it starts as 'pending' until a scheduled task activates it.
     });
     
+    // Update Station Status if necessary
     if (newClosure.status === 'active') {
         await PartneredChargingStation.findByIdAndUpdate(stationId, { station_status: 'unavailable' });
     }

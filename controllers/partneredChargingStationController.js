@@ -10,6 +10,7 @@ const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 const Booking2 = require('../models/booking2Model')
+const Booking = require('../models/bookingModel');
 
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
@@ -518,8 +519,9 @@ const updateStationSchedule = asyncHandler(async (req, res) => {
             { 
                 new: true, 
                 runValidators: true,
+                select: '+station_schedule',
                 // Only validate the schedule path to avoid errors from missing general station fields
-                fields: { station_schedule: 1, _id: 1, station_owner_id: 1 }
+                // fields: { station_schedule: 1, _id: 1, station_owner_id: 1 }
             }
         );
 
@@ -530,6 +532,89 @@ const updateStationSchedule = asyncHandler(async (req, res) => {
                 success: false,
                 message: 'Station not found or not owned by user.'
             });
+        }
+
+        // Find and Cancel Conflicting Bookings
+
+        const now = new Date();
+        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+        const upcomingBookings = await Booking.find({
+            charging_station_id: stationId,
+            status: 'upcoming',
+            end_time: { $gt: now } 
+        });
+
+        const bookingsToCancel = [];
+
+        upcomingBookings.forEach(booking => {
+            const bookingStartTime = booking.start_time;
+            const bookingEndTime = booking.end_time;
+            
+            // Get the day of the week for the booking (0=Sunday, 1=Monday, ..., 6=Saturday)
+            const bookingDayIndex = bookingStartTime.getDay();
+            const bookingDayKey = daysOfWeek[bookingDayIndex];
+
+            const daySchedule = station_schedule[bookingDayKey];
+            
+            // Assume any day missing from the schedule is treated as fully closed/unavailable 
+            // if the schedule is being explicitly set.
+            const isDayClosed = !daySchedule || daySchedule.closed;
+
+            // If the day is marked as closed or not set, the booking must be cancelled.
+            if (isDayClosed) {
+                bookingsToCancel.push(booking._id);
+                return; // Move to the next booking
+            }
+
+            // If the day has specific time blocks, check if the booking fits inside them.
+            if (!daySchedule.open24Hours && daySchedule.timeBlocks && daySchedule.timeBlocks.length > 0) {
+                
+                let isBookingCovered = false;
+                
+                daySchedule.timeBlocks.forEach(block => {
+                    // Convert block times (HH:MM string) to Date objects for comparison
+                    // WARNING: This assumes all time blocks are within the same day as the booking.
+                    
+                    const [startH, startM] = block.from.split(':').map(Number);
+                    const [endH, endM] = block.to.split(':').map(Number);
+                    
+                    const scheduledStart = new Date(bookingStartTime);
+                    scheduledStart.setHours(startH, startM, 0, 0); // Set time on the booking's date
+                    
+                    const scheduledEnd = new Date(bookingStartTime);
+                    scheduledEnd.setHours(endH, endM, 0, 0);
+
+                    // Check if the booking period is entirely contained within this time block
+                    // A booking is invalid if its start is after the block starts AND its end is before the block ends.
+                    if (bookingStartTime >= scheduledStart && bookingEndTime <= scheduledEnd) {
+                        isBookingCovered = true;
+                    }
+                });
+
+                if (!isBookingCovered) {
+                    bookingsToCancel.push(booking._id);
+                }
+            }
+            // If open24Hours is true, the booking is always covered, so no action needed.
+        });
+
+        if (bookingsToCancel.length > 0) {
+            const cancellationDetails = {
+                status: 'cancelled',
+                cancelled_at: now,
+                cancellation_reason: 'Station schedule updated by owner.',
+                cancelled_by_type: 'StationOwner',
+                cancelled_by_id: stationOwnerID
+            };
+
+            await Booking.updateMany(
+                { _id: { $in: bookingsToCancel } },
+                { $set: cancellationDetails }
+            );
+
+            // You would also queue notifications to the affected EV owners here
+            console.log(`Successfully cancelled ${bookingsToCancel.length} bookings due to schedule change.`);
         }
 
         // Optional: Send message/notification about schedule update
