@@ -11,6 +11,6 @@ router.get('/data', getDistrictsBanks);
 router.get('/districts', getAllDistricts);
 router.get('/connectors/:currentType', getConnectorsByType);
 
-router.get('/filteredChargingStations', filteredChargingStations);
+router.post('/filteredChargingStations', filteredChargingStations);
 
 module.exports = router;

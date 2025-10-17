@@ -1315,6 +1315,31 @@ const getStationDetailsForSupportOfficer = asyncHandler(async (req, res) => {
     }
 })
 
+const getStationsForMap = asyncHandler(async (req, res) => {
+  try {
+    const stations = await PartneredChargingStation.find({
+      latitude: { $exists: true, $ne: null },
+      longitude: { $exists: true, $ne: null }
+    })
+      .populate('district', 'name')
+      .populate('station_owner_id', 'name email contact_number')
+      .select('_id station_name latitude longitude address city');
+
+    res.status(200).json({
+      success: true,
+      data: stations
+    });
+  } catch (error) {
+    console.error('Error fetching stations for map:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching stations',
+      error: error.message
+    });
+  }
+});
+
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -1330,5 +1355,6 @@ module.exports = {
     getStationChargers,
     updateCharger,
     getAllStationsForSupportOfficer,
-    getStationDetailsForSupportOfficer
+    getStationDetailsForSupportOfficer,
+    getStationsForMap
 }

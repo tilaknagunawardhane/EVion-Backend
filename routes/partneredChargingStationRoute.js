@@ -8,7 +8,8 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     getOwnerStations,
     getStationById, getStationChargers, updateCharger,
     getAllStationsForSupportOfficer,
-    getStationDetailsForSupportOfficer
+    getStationDetailsForSupportOfficer,
+    getStationsForMap
  } = require('../controllers/partneredChargingStationController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -28,5 +29,6 @@ router.get('/station/:stationId/chargers', getStationChargers);
 router.put('/station/:stationId/update-charger/:chargerId', updateCharger);
 router.get('/support-officer/stations', getAllStationsForSupportOfficer);
 router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
+router.get('/map/stations', getStationsForMap);
 
 module.exports = router;
