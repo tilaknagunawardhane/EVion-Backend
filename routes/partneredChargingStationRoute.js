@@ -11,6 +11,9 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer
  } = require('../controllers/partneredChargingStationController');
+
+const { getTemporaryClosures, createTemporaryClosure, cancelTemporaryClosure } = require('../controllers/tempClosureController');
+
 const authMiddleware = require('../middlewares/authMiddleware');
 
 // router.get('/check-stations', authMiddleware(['station-owner'], ['station-owner']), checkStationsExist);
@@ -31,5 +34,9 @@ router.put('/station/:stationId/update-charger/:chargerId', updateCharger);
 router.post('/station/:stationId/add-charger', addChargerToStation);
 router.get('/support-officer/stations', getAllStationsForSupportOfficer);
 router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
+
+router.get('/:stationId/temporary-closure', getTemporaryClosures);
+router.post('/:stationId/create-temporary-closure', createTemporaryClosure);
+router.put('/:stationId/remove-temporary-closure/:closureId', cancelTemporaryClosure);
 
 module.exports = router;
