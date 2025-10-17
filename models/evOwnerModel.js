@@ -163,9 +163,31 @@ const evOwnerSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
+    // formatted home address shown in profile (read-only aggregate)
     home_address: {
         type: String,
         required: false
+    },
+    // structured address fields collected from the address form
+    apartment: {
+        type: String,
+        required: false,
+        default: ''
+    },
+    street_name: {
+        type: String,
+        required: false,
+        default: ''
+    },
+    city: {
+        type: String,
+        required: false,
+        default: ''
+    },
+    district: {
+        type: String,
+        required: false,
+        default: ''
     },
     
     // Fields to support email-change verification flow

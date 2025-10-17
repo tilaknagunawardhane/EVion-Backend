@@ -48,7 +48,7 @@ const sendVerificationEmail = async ({ to, subject, text, html }) => {
 const getProfile = asyncHandler(async (req, res) => {
   try {
   const { id } = req.params;
-  const user = await EvOwner.findById(id).select('name email contact_number home_address workplace');
+  const user = await EvOwner.findById(id).select('name email contact_number home_address apartment street_name city district');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     return res.status(200).json({ success: true, data: user });
   } catch (error) {
@@ -60,7 +60,7 @@ const getProfile = asyncHandler(async (req, res) => {
 const updateProfile = asyncHandler(async (req, res) => {
   try {
   const { id } = req.params;
-  const { name,contact_number, home_address, workplace } = req.body;
+  const { name,contact_number, home_address, apartment, street_name, city, district } = req.body;
 
     const user = await EvOwner.findById(id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -69,7 +69,11 @@ const updateProfile = asyncHandler(async (req, res) => {
   
     if (contact_number !== undefined) user.contact_number = contact_number;
   if (home_address !== undefined) user.home_address = home_address;
-  if (workplace !== undefined) user.workplace = workplace;
+  if (apartment !== undefined) user.apartment = apartment;
+  if (street_name !== undefined) user.street_name = street_name;
+  if (city !== undefined) user.city = city;
+  if (district !== undefined) user.district = district;
+  
    
 
     await user.save();
@@ -80,6 +84,10 @@ const updateProfile = asyncHandler(async (req, res) => {
       email: user.email,
   contact_number: user.contact_number,
   home_address: user.home_address,
+  apartment: user.apartment || '',
+  street_name: user.street_name || '',
+  city: user.city || '',
+  district: user.district || '',
      
     }});
   } catch (error) {
@@ -186,9 +194,52 @@ const verifyEmailOtp = asyncHandler(async (req, res) => {
   }
 });
 
+  // POST /api/evowners/profile/:id/address
+  // body: { apartment, street_name, city, district }
+  const saveAddress = asyncHandler(async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { apartment, street_name, city, district } = req.body;
+
+      const user = await EvOwner.findById(id);
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+      if (apartment !== undefined) user.apartment = apartment;
+      if (street_name !== undefined) user.street_name = street_name;
+      if (city !== undefined) user.city = city;
+      if (district !== undefined) user.district = district;
+
+      // Compose a formatted home_address for display
+      const parts = [];
+      if (user.apartment) parts.push(user.apartment);
+      if (user.street_name) parts.push(user.street_name);
+      if (user.city) parts.push(user.city);
+      if (user.district) parts.push(user.district);
+      user.home_address = parts.join(', ');
+
+      await user.save();
+
+      return res.status(200).json({ success: true, message: 'Address saved', data: {
+        _id: user._id,
+        email: user.email,
+        name: user.name,
+        contact_number: user.contact_number,
+        home_address: user.home_address,
+        apartment: user.apartment || '',
+        street_name: user.street_name || '',
+        city: user.city || '',
+        district: user.district || ''
+      }});
+    } catch (error) {
+      console.error('saveAddress error:', error);
+      return res.status(500).json({ success: false, message: 'Error saving address' });
+    }
+  });
+
 module.exports = {
   getProfile,
   updateProfile,
   sendEmailOtp,
-  verifyEmailOtp
+  verifyEmailOtp,
+  saveAddress
 };
