@@ -26,7 +26,7 @@ const payoutBatchSchema = new mongoose.Schema({
     
     status: {
         type: String,
-        enum: ['draft', 'approved', 'processing', 'completed', 'failed'],
+        enum: ['draft', 'approved', 'completed', 'failed'],
         default: 'draft',
         required: true
     },
@@ -61,8 +61,16 @@ const payoutBatchSchema = new mongoose.Schema({
             type: String,
             required: false
         },
+        payment_proof_url: {
+            type: String,
+            required: false
+        },
         paid_at: {
             type: Date,
+            required: false
+        },
+        payment_notes: {
+            type: String,
             required: false
         }
     }],
