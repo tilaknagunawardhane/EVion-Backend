@@ -5,9 +5,10 @@ const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
 const StationOwner = require('../models/stationOwnerModel');
-const Booking2 = require('../models/booking2Model');
+const Booking2 = require('../models/bookingModel');
 const ConnectorModel = require('../models/connectorModel'); // Assuming you have a connector model
 const { notifyNewReport } = require('../middlewares/notificationMiddleware')
+const WalletService = require('../services/walletService');
 
 const submitStationReport = asyncHandler(async (req, res) => {
     const { userId, stationId, category, description, attachments = [] } = req.body;
@@ -159,6 +160,7 @@ const submitChargerReport = asyncHandler(async (req, res) => {
 const getBookingDetails = asyncHandler(async (req, res) => {
     try {
         const { bookingId } = req.params;
+        console.log('Fetching details for booking ID:', bookingId);
         if (!bookingId) {
             return res.status(400).json({
                 success: false,
@@ -278,7 +280,7 @@ const getBookingDetails = asyncHandler(async (req, res) => {
             status: booking.status,
             arrival_time: booking.arrival_time,
             cancelled_at: booking.cancelled_at,
-            cost: booking.cost,
+            cost: booking.booking_fee,
             created_at: booking.createdAt,
             updated_at: booking.updatedAt
         };
@@ -373,8 +375,8 @@ const submitBookingReport = asyncHandler(async (req, res) => {
             })
             .populate({
                 path: 'booking_id',
-                model: 'booking2',
-                select: 'start_time end_time status cost'
+                model: 'booking',
+                select: 'start_time end_time status booking_fee'
             })
             .lean();
 
@@ -468,7 +470,7 @@ const getAllReports = asyncHandler(async (req, res) => {
                     .populate(userPopulate)
                     .populate({
                         path: 'booking_id',
-                        model: 'booking2',
+                        model: 'booking',
                         populate: [
                             {
                                 path: 'ev_user_id',
@@ -708,7 +710,7 @@ const getReportDetails = asyncHandler(async (req, res) => {
                     .populate('resolved_by', 'name email')
                     .populate({
                         path: 'booking_id',
-                        model: 'booking2',
+                        model: 'booking',
                         populate: [
                             {
                                 path: 'charging_station_id',
@@ -841,6 +843,7 @@ const saveReportAction = asyncHandler(async (req, res) => {
                 is_refunded: refund_amount > 0
             })
         };
+
         let updatedReport;
         let reportModel;
 
@@ -860,7 +863,12 @@ const saveReportAction = asyncHandler(async (req, res) => {
                     message: 'Invalid report type. Use stations, chargers, or bookings'
                 });
         }
-        const existingReport = await reportModel.findById(id);
+
+        // Fetch existing report early so we can validate and use its booking data for refunds
+        const existingReport = await reportModel.findById(id).populate({
+            path: 'booking_id',
+            populate: [{ path: 'ev_user_id' }]
+        });
         if (!existingReport) {
             return res.status(404).json({
                 success: false,
@@ -874,6 +882,30 @@ const saveReportAction = asyncHandler(async (req, res) => {
                 message: 'Report has already been processed'
             });
         }
+
+        // If refund is requested for a booking report, perform refund using WalletService
+        if (refund_amount !== undefined && type === 'bookings' && parseFloat(refund_amount) > 0) {
+            const booking = existingReport.booking_id;
+            if (!booking) {
+                return res.status(400).json({ success: false, message: 'Associated booking not found for this report' });
+            }
+
+            // ev_user_id may be populated object or an ObjectId
+            const evOwnerId = booking.ev_user_id && (booking.ev_user_id._id || booking.ev_user_id);
+            if (!evOwnerId) {
+                return res.status(400).json({ success: false, message: 'EV owner for booking not found' });
+            }
+
+            // Call refund service
+            await WalletService.refundBooking(
+                evOwnerId,
+                booking._id,
+                parseFloat(refund_amount),
+                `Report resolved: ${action}`,
+                existingReport._id
+            );
+        }
+
         updatedReport = await reportModel.findByIdAndUpdate(
             id,
             updateData,

@@ -23,6 +23,7 @@
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dayjs": "^1.11.13",
     "dayjs-plugin-utc": "^0.1.2",
     "dotenv": "^16.6.1",

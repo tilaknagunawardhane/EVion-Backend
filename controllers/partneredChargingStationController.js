@@ -9,7 +9,7 @@ const Message = require('../models/messageModel');
 const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
-const Booking2 = require('../models/booking2Model')
+const Booking2 = require('../models/bookingModel')
 
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
@@ -227,7 +227,7 @@ const createStation = asyncHandler(async (req, res) => {
             request_status: 'finished'
         });
 
-        // Create station
+        // Create station - no changes needed since your model already expects {longitude, latitude}
         const newStation = await PartneredChargingStation.create({
             station_owner_id: stationOwnerID,
             ...stationData
@@ -236,7 +236,6 @@ const createStation = asyncHandler(async (req, res) => {
         if (newStation) {
             await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
             await notifyNewStation(newStation, owner)
-
 
             console.log("Go here");
             res.status(201).json({
@@ -1313,7 +1312,9 @@ const getStationDetailsForSupportOfficer = asyncHandler(async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
-})
+});
+
+
 
 const getStationsForMap = asyncHandler(async (req, res) => {
   try {
