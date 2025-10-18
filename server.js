@@ -31,6 +31,7 @@ const reportsRoutes = require('./routes/reportsRoute');
 const chatRoutes = require('./routes/chatRoute');
 const notificationRoutes = require('./routes/notificationRoute');
 const walletRoutes = require('./routes/walletRoute');
+const stationOwnerEarningsRoutes = require('./routes/stationOwnerEarningsRoute');
 
 app.use('/api/evowners', evOwnerRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -42,6 +43,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/station-owner', stationOwnerEarningsRoutes);
 
 app.use('/api/auth', authRoutes);
 

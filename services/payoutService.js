@@ -478,6 +478,97 @@ class PayoutService {
             throw error;
         }
     }
+
+    // Get station owner dashboard stats
+async getStationOwnerDashboardStats(stationOwnerId) {
+    try {
+        const currentDate = new Date();
+        const currentMonth = currentDate.getMonth() + 1;
+        const currentYear = currentDate.getFullYear();
+
+        // Current month earnings
+        const currentMonthEarnings = await StationEarnings.aggregate([
+            {
+                $match: {
+                    station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
+                    month: currentMonth,
+                    year: currentYear
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total_gross: { $sum: '$gross_amount' },
+                    total_net: { $sum: '$net_amount' },
+                    total_commission: { $sum: '$platform_commission' },
+                    pending_earnings: {
+                        $sum: {
+                            $cond: [{ $eq: ['$payout_status', 'pending'] }, '$net_amount', 0]
+                        }
+                    },
+                    earnings_count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Last 6 months trend
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+        const monthlyTrend = await StationEarnings.aggregate([
+            {
+                $match: {
+                    station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
+                    createdAt: { $gte: sixMonthsAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { year: '$year', month: '$month' },
+                    total_earnings: { $sum: '$net_amount' },
+                    earnings_count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.year': -1, '_id.month': -1 } },
+            { $limit: 6 }
+        ]);
+
+        // Recent payouts
+        const recentPayouts = await PayoutBatch.find({
+            'payouts.station_owner_id': stationOwnerId,
+            status: 'completed'
+        })
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .select('batch_number month year total_amount payouts.$');
+
+        const stats = {
+            current_month: currentMonthEarnings[0] || {
+                total_gross: 0,
+                total_net: 0,
+                total_commission: 0,
+                pending_earnings: 0,
+                earnings_count: 0
+            },
+            monthly_trend: monthlyTrend,
+            recent_payouts: recentPayouts.map(batch => {
+                const payout = batch.payouts.find(p => 
+                    p.station_owner_id.toString() === stationOwnerId
+                );
+                return {
+                    batch_number: batch.batch_number,
+                    month: batch.month,
+                    year: batch.year,
+                    amount: payout?.amount || 0
+                };
+            })
+        };
+
+        return stats;
+    } catch (error) {
+        throw error;
+    }
+}
 }
 
 module.exports = new PayoutService();

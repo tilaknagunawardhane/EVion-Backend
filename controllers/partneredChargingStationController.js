@@ -1312,7 +1312,9 @@ const getStationDetailsForSupportOfficer = asyncHandler(async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
-})
+});
+
+
 
 module.exports = {
     checkStationsExist,
