@@ -26,6 +26,9 @@ const vehicleRoutes = require('./routes/vehicleRoute');
 const commonRoutes = require('./routes/commonRoute');
 const partneredChargingStationRoutes = require('./routes/partneredChargingStationRoute');
 const adminRoutes = require('./routes/adminRoute');
+const discussionRoutes = require('./routes/discussionRoutes');
+// const commonRoutes = require('./routes/commonRoute');
+
 const authRoutes = require('./routes/authRoute');
 const reportsRoutes = require('./routes/reportsRoute');
 const chatRoutes = require('./routes/chatRoute');
@@ -39,13 +42,16 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/common', commonRoutes);
 app.use('/api/stations', partneredChargingStationRoutes);
 app.use('/api/admin', adminRoutes);
+
 app.use('/api/reports', reportsRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/station-owner', stationOwnerEarningsRoutes);
 
+app.use('/api/discussions', discussionRoutes);
 app.use('/api/auth', authRoutes);
+
 
 // Start server
 const PORT = process.env.PORT || 5000;
