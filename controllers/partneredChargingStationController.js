@@ -227,7 +227,7 @@ const createStation = asyncHandler(async (req, res) => {
             request_status: 'finished'
         });
 
-        // Create station
+        // Create station - no changes needed since your model already expects {longitude, latitude}
         const newStation = await PartneredChargingStation.create({
             station_owner_id: stationOwnerID,
             ...stationData
@@ -236,7 +236,6 @@ const createStation = asyncHandler(async (req, res) => {
         if (newStation) {
             await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
             await notifyNewStation(newStation, owner)
-
 
             console.log("Go here");
             res.status(201).json({
