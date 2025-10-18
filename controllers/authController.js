@@ -67,6 +67,13 @@ const loginUser = async (Model, req, res) => {
         const userData = user.toObject();
         delete userData.password;
 
+        // Log outgoing response for debugging
+        console.log('Login successful response:', {
+            accessToken: accessToken ? '<<redacted>>' : null,
+            refreshToken: refreshToken ? '<<redacted>>' : null,
+            user: { _id: userData._id, name: userData.name, email: userData.email }
+        });
+
         res.status(200).json({
             success: true,
             message: 'Login successful',

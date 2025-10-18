@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { registerEvOwner, loginEvOwner, sendOTP, verifyOTP, resetPassword } = require('../controllers/evOwnerController');
+const { registerEvOwner, sendOTP, verifyOTP, resetPassword } = require('../controllers/evOwnerController');
+const authController = require('../controllers/authController');
 const { getProfile, updateProfile, sendEmailOtp, verifyEmailOtp, saveAddress, changePassword, updateRecoveryPhone } = require('../controllers/profileController');
 
 // Route to register a new EV owner
 router.post('/register', registerEvOwner);
 // Route to login an existing EV owner
-router.post('/login', loginEvOwner);
+// Use central auth controller for login so responses include tokens and a full user object
+router.post('/login', authController.evOwnerLogin);
 
 router.post('/send-otp', sendOTP);
 router.post('/verify-otp', verifyOTP);
