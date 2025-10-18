@@ -4,7 +4,7 @@ const chargingSessionSchema = new mongoose.Schema({
     booking_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'booking',
-        required: true
+        required: false
     },
     ev_owner_id: {
         type: mongoose.Schema.Types.ObjectId,
