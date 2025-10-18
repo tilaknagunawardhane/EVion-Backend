@@ -9,7 +9,7 @@ const Message = require('../models/messageModel');
 const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
-const Booking2 = require('../models/booking2Model')
+const Booking2 = require('../models/bookingModel')
 const Booking = require('../models/bookingModel');
 
 const StationReport = require('../models/stationReportModel');
@@ -252,7 +252,6 @@ const createStation = asyncHandler(async (req, res) => {
         if (newStation) {
             await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
             await notifyNewStation(newStation, owner)
-
 
             console.log("Go here");
             res.status(201).json({
@@ -1552,7 +1551,34 @@ const getStationDetailsForSupportOfficer = asyncHandler(async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
-})
+});
+
+
+
+const getStationsForMap = asyncHandler(async (req, res) => {
+  try {
+    const stations = await PartneredChargingStation.find({
+      latitude: { $exists: true, $ne: null },
+      longitude: { $exists: true, $ne: null }
+    })
+      .populate('district', 'name')
+      .populate('station_owner_id', 'name email contact_number')
+      .select('_id station_name latitude longitude address city');
+
+    res.status(200).json({
+      success: true,
+      data: stations
+    });
+  } catch (error) {
+    console.error('Error fetching stations for map:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching stations',
+      error: error.message
+    });
+  }
+});
+
 
 module.exports = {
     checkStationsExist,
@@ -1571,5 +1597,6 @@ module.exports = {
     updateCharger,
     addChargerToStation,
     getAllStationsForSupportOfficer,
-    getStationDetailsForSupportOfficer
+    getStationDetailsForSupportOfficer,
+    getStationsForMap
 }

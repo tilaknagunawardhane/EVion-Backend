@@ -60,8 +60,9 @@ const bookingSchema = new mongoose.Schema({
         type: Date,
         required: false
     },
-    cost: {
+    booking_fee: {
         type: Number,
+        default: 100,
         required: false
     },
     cancellation_reason: {

@@ -15,9 +15,7 @@ const ratingSchema = new mongoose.Schema({
     reasons: [{
         type: String,
         required: true
-        // You can optionally validate based on `stars` if needed
     }],
-
 }, {
     _id: true,
     timestamps: true
@@ -53,7 +51,7 @@ const chargerSchema = new mongoose.Schema({
                 enum: ['available', 'unavailable'],
                 required: true
             }
-        }, { _id: true }) // This ensures each connector has its own ObjectId
+        }, { _id: true })
     ],
     charger_status: {
         type: String,
@@ -123,6 +121,33 @@ const partneredChargingStationSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    // Location field with separate longitude and latitude
+    location: {
+        longitude: {
+            type: Number,
+            required: true,
+            min: -180,
+            max: 180,
+            validate: {
+                validator: function(lng) {
+                    return lng >= -180 && lng <= 180;
+                },
+                message: 'Longitude must be between -180 and 180'
+            }
+        },
+        latitude: {
+            type: Number,
+            required: true,
+            min: -90,
+            max: 90,
+            validate: {
+                validator: function(lat) {
+                    return lat >= -90 && lat <= 90;
+                },
+                message: 'Latitude must be between -90 and 90'
+            }
+        }
+    },
     electricity_provider: {
         type: String,
         enum: ['CEB', 'LECO', 'Private'],
@@ -156,10 +181,13 @@ const partneredChargingStationSchema = new mongoose.Schema({
 
     chargers: [chargerSchema],
     ratings: [ratingSchema]
-},
-    { 
-        _id: true,
-        timestamps: true });
+}, { 
+    _id: true,
+    timestamps: true 
+});
+
+// Create compound index for geospatial queries (if needed)
+partneredChargingStationSchema.index({ "location.longitude": 1, "location.latitude": 1 });
 
 const PartneredChargingStation = mongoose.model('partneredChargingStation', partneredChargingStationSchema);
 module.exports = PartneredChargingStation;

@@ -9,7 +9,8 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     getStationById, getStationChargers, updateCharger,
     addChargerToStation,
     getAllStationsForSupportOfficer,
-    getStationDetailsForSupportOfficer
+    getStationDetailsForSupportOfficer,
+    getStationsForMap
  } = require('../controllers/partneredChargingStationController');
 
 const { getTemporaryClosures, createTemporaryClosure, cancelTemporaryClosure } = require('../controllers/tempClosureController');
@@ -34,6 +35,7 @@ router.put('/station/:stationId/update-charger/:chargerId', updateCharger);
 router.post('/station/:stationId/add-charger', addChargerToStation);
 router.get('/support-officer/stations', getAllStationsForSupportOfficer);
 router.get('/support-officer/stations/:stationId', getStationDetailsForSupportOfficer);
+router.get('/map/stations', getStationsForMap);
 
 router.get('/:stationId/temporary-closure', getTemporaryClosures);
 router.post('/:stationId/create-temporary-closure', createTemporaryClosure);

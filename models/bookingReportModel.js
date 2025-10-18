@@ -8,7 +8,7 @@ const bookingReportSchema = new mongoose.Schema({
     },
     booking_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'booking2',
+        ref: 'booking',
         required: true
     },
     category: {
