@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const chargingSessionSchema = new mongoose.Schema({
     booking_id: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'booking2',
+        ref: 'booking',
         required: true
     },
     ev_owner_id: {

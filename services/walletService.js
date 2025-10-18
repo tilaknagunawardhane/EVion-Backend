@@ -2,6 +2,7 @@ const Wallet = require('../models/walletModel');
 const Transaction = require('../models/transactionModel');
 const StationEarnings = require('../models/stationEarningsModel');
 const mongoose = require('mongoose');
+const Booking = require('../models/bookingModel');
 
 class WalletService {
     // Create wallet for new EV owner
@@ -178,51 +179,102 @@ class WalletService {
     }
 
     // Refund booking fee (station closure or report)
-    async refundBooking(evOwnerId, bookingId, amount, reason, reportId = null) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
+    async refundBooking(evOwnerId, bookingId, amount, reason, reportId = null, stationOwnerId) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-        try {
-            const wallet = await Wallet.findOne({ ev_owner_id: evOwnerId }).session(session);
-            if (!wallet) throw new Error('Wallet not found');
+    try {
+        const wallet = await Wallet.findOne({ ev_owner_id: evOwnerId }).session(session);
+        if (!wallet) throw new Error('Wallet not found');
 
-            const balanceBefore = wallet.balance;
-            wallet.balance += amount;
-            await wallet.save({ session });
+        const balanceBefore = wallet.balance;
+        wallet.balance += amount;
+        await wallet.save({ session });
 
-            const transaction = new Transaction({
-                wallet_id: wallet._id,
-                ev_owner_id: evOwnerId,
-                type: 'refund_booking',
-                amount: amount,
-                balance_before: balanceBefore,
-                balance_after: wallet.balance,
-                status: 'completed',
-                booking_id: bookingId,
-                report_id: reportId,
-                payment_method: 'wallet',
-                description: `Refund for booking #${bookingId} - ${reason}`
-            });
-            await transaction.save({ session });
+        const transaction = new Transaction({
+            wallet_id: wallet._id,
+            ev_owner_id: evOwnerId,
+            type: 'refund_booking',
+            amount: amount,
+            balance_before: balanceBefore,
+            balance_after: wallet.balance,
+            status: 'completed',
+            booking_id: bookingId,
+            report_id: reportId,
+            payment_method: 'wallet',
+            description: `Refund for booking #${bookingId} - ${reason}`
+        });
+        await transaction.save({ session });
 
-            // Update the corresponding earnings record to deduct from station owner
-            await StationEarnings.updateOne(
-                { booking_id: bookingId },
-                {
-                    payout_status: 'on_hold',
-                    metadata: { refunded: true, reason: reason }
+        // Update the corresponding earnings record to on_hold or mark as refunded
+        await StationEarnings.findOneAndUpdate(
+            { booking_id: bookingId },
+            {
+                payout_status: 'on_hold',
+                metadata: { 
+                    refunded: true, 
+                    reason: reason,
+                    refund_amount: amount,
+                    refunded_at: new Date(),
+                    refunded_by: stationOwnerId
                 }
-            ).session(session);
+            },
+            { session }
+        );
 
-            await session.commitTransaction();
-            return { wallet, transaction };
-        } catch (error) {
-            await session.abortTransaction();
-            throw error;
-        } finally {
-            session.endSession();
-        }
+        // Update booking payment status
+        await Booking.findOneAndUpdate(
+            { _id: bookingId },
+            { 
+                status: 'cancelled',
+                cancellation_reason: reason,
+                cancelled_by_type: 'StationOwner',
+                cancelled_by_id: evOwnerId
+            },
+            { session }
+        );
+
+        await session.commitTransaction();
+        return { wallet, transaction };
+    } catch (error) {
+        await session.abortTransaction();
+        throw error;
+    } finally {
+        session.endSession();
     }
+}
+
+// Check if a booking was refunded
+async wasBookingRefunded(bookingId) {
+    const earning = await StationEarnings.findOne({ 
+        booking_id: bookingId,
+        'metadata.refunded': true 
+    });
+    
+    return {
+        wasRefunded: !!earning,
+        refundAmount: earning?.metadata?.refund_amount || 0,
+        refundReason: earning?.metadata?.reason || '',
+        refundedAt: earning?.metadata?.refunded_at || null
+    };
+}
+
+// Get all refunds for a station owner
+async getStationRefunds(stationOwnerId, startDate, endDate) {
+    const refunds = await StationEarnings.find({
+        station_owner_id: stationOwnerId,
+        'metadata.refunded': true,
+        createdAt: {
+            $gte: new Date(startDate),
+            $lte: new Date(endDate)
+        }
+    })
+    .populate('booking_id')
+    .populate('station_id', 'station_name')
+    .sort({ createdAt: -1 });
+
+    return refunds;
+}
 
     // Get transaction history
     async getTransactionHistory(evOwnerId, limit = 50, skip = 0) {
