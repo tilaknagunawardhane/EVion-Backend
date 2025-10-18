@@ -1037,6 +1037,13 @@ const getStationById = asyncHandler(async (req, res) => {
             ? stationRatings.reduce((sum, rating) => sum + rating.stars, 0) / stationRatings.length
             : 0;
 
+        // Ensure location data is properly formatted
+        const locationData = station.location || {};
+        const formattedLocation = {
+            latitude: locationData.latitude || locationData.lat || 0,
+            longitude: locationData.longitude || locationData.lng || 0
+        };
+
         const formattedStation = {
             _id: station._id.toString(),
             station_name: station.station_name || 'Unnamed Station',
@@ -1046,7 +1053,7 @@ const getStationById = asyncHandler(async (req, res) => {
             district: station.district?.name || '',
             electricity_provider: station.electricity_provider || 'N/A',
             power_source: station.power_source || 'N/A',
-            location: station.location || { lat: 0, lng: 0 },
+            location: formattedLocation, // Use formatted location
             averageRating: Math.round(averageRating * 10) / 10,
             totalRatings: stationRatings.length,
             station_schedule: station.station_schedule || {},
