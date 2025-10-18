@@ -2,10 +2,14 @@ const asyncHandler = require('express-async-handler');
 const TemporaryClosure = require('../models/temporaryClosureModel');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
 const Booking = require('../models/bookingModel');
+const WalletService = require('../services/walletService');
+const mongoose = require('mongoose');
 
 const createTemporaryClosure = asyncHandler(async (req, res) => {
     const { stationId } = req.params;
     const { owner_id, fromDateTime, toDateTime, reason } = req.body;
+    console.log("Creating temporary closure for station:", stationId);
+    console.log("Come here 1")
 
     const startTime = new Date(fromDateTime);
     const endTime = new Date(toDateTime);
@@ -22,19 +26,68 @@ const createTemporaryClosure = asyncHandler(async (req, res) => {
             { start_time: { $lt: endTime } }, // Booking starts before closure ends
             { end_time: { $gt: startTime } }  // Closure starts before booking ends
         ]
-    });
+    }).populate('ev_user_id', '_id'); // Populate EV owner ID for refunds
 
     const cancellationDetails = {
         status: 'cancelled',
         cancelled_at: new Date(),
-        cancellation_reason: `Station closed due to ${reason}`,
-        cancelled_by_type: 'StationOwner', // Assuming owner_id is from StationOwner model
+        cancellation_reason: `Station closed due to: ${reason}`,
+        cancelled_by_type: 'StationOwner',
         cancelled_by_id: owner_id
     };
 
-    // Update all overlapping bookings
+    console.log("Come here 2")
+    // Process refunds for cancelled bookings
+    const refundResults = [];
     if (overlappingBookings.length > 0) {
-        // Use updateMany for atomic bulk update
+        for (const booking of overlappingBookings) {
+            try {
+                // Check if this booking has already been paid for (has a booking fee)
+                // You might want to add a field in your Booking model to track if booking fee was paid
+                const bookingFeeAmount = booking.booking_fee || 0; // Adjust based on your booking model
+                
+                if (bookingFeeAmount > 0 && booking.ev_user_id) {
+                    // Process refund for booking fee
+                    const refundResult = await WalletService.refundBooking(
+                        booking.ev_user_id._id, // EV owner ID
+                        booking._id, // Booking ID
+                        bookingFeeAmount, // Amount to refund
+                        `Station temporary closure: ${reason}`,
+                        null, // reportId if applicable,
+                        owner_id // Station owner ID processing the refund
+                    );
+                    
+                    refundResults.push({
+                        bookingId: booking._id,
+                        evOwnerId: booking.ev_user_id._id,
+                        amount: bookingFeeAmount,
+                        success: true,
+                        transactionId: refundResult.transaction._id
+                    });
+                    
+                    console.log(`Refund processed for booking ${booking._id}: LKR ${bookingFeeAmount}`);
+                } else {
+                    refundResults.push({
+                        bookingId: booking._id,
+                        evOwnerId: booking.ev_user_id?._id,
+                        amount: 0,
+                        success: true,
+                        note: 'No booking fee to refund'
+                    });
+                }
+            } catch (refundError) {
+                console.error(`Failed to refund booking ${booking._id}:`, refundError);
+                refundResults.push({
+                    bookingId: booking._id,
+                    evOwnerId: booking.ev_user_id?._id,
+                    amount: booking.booking_fee || 0,
+                    success: false,
+                    error: refundError.message
+                });
+            }
+        }
+
+        // Update all overlapping bookings status
         await Booking.updateMany(
             { _id: { $in: overlappingBookings.map(b => b._id) } },
             { $set: cancellationDetails }
@@ -43,16 +96,18 @@ const createTemporaryClosure = asyncHandler(async (req, res) => {
     }
 
     // Create Temporary Closure Record
-    // Convert date strings to Date objects (Mongoose handles this automatically, but good practice)
     const newClosure = await TemporaryClosure.create({
         station_id: stationId,
         owner_id: owner_id,
         from_date_time: startTime,
         to_date_time: endTime,
         reason: reason,
-        status: startTime <= new Date() ? 'active' : 'pending' 
-        // If the closure starts immediately, set status to 'active'.
-        // Otherwise, it starts as 'pending' until a scheduled task activates it.
+        status: startTime <= new Date() ? 'active' : 'pending',
+        metadata: {
+            cancelled_bookings: overlappingBookings.length,
+            refunds_processed: refundResults.filter(r => r.success).length,
+            refund_details: refundResults
+        }
     });
     
     // Update Station Status if necessary
@@ -62,8 +117,16 @@ const createTemporaryClosure = asyncHandler(async (req, res) => {
 
     res.status(201).json({ 
         success: true, 
-        message: 'Temporary closure recorded.', 
-        data: newClosure 
+        message: `Temporary closure recorded. ${overlappingBookings.length} bookings cancelled. ${refundResults.filter(r => r.success).length} refunds processed.`,
+        data: {
+            closure: newClosure,
+            cancellation_summary: {
+                total_bookings: overlappingBookings.length,
+                successful_refunds: refundResults.filter(r => r.success).length,
+                failed_refunds: refundResults.filter(r => !r.success).length,
+                refund_details: refundResults
+            }
+        }
     });
 });
 
