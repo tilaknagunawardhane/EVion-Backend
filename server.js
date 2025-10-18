@@ -2,7 +2,6 @@ const express = require('express');
 const connectDB = require('./config/db');
 const cors = require('cors');
 require('dotenv').config();
-const ocppRoutes = require('./routes/ocppRoutes');
 const http = require('http'); // 👈 add
 const { Server } = require('socket.io'); 
 
@@ -51,6 +50,8 @@ const authRoutes = require('./routes/authRoute');
 const reportsRoutes = require('./routes/reportsRoute');
 const chatRoutes = require('./routes/chatRoute');
 const notificationRoutes = require('./routes/notificationRoute');
+const chargingSessionRoutes = require('./routes/chargingSessionRoutes');
+const ocppRoutes = require('./routes/ocppRoutes');
 
 app.use('/api/evowners', evOwnerRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -62,6 +63,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ocpp', ocppRoutes);
+app.use('/api/charging-sessions', chargingSessionRoutes);
 
 app.use('/api/auth', authRoutes);
 

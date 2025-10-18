@@ -7,5 +7,4 @@ router.post('/start', startCharging);
 router.post('/stop', stopCharging);
 router.get('/data', getData);
 
-
 module.exports = router;

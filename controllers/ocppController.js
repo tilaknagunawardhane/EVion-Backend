@@ -104,40 +104,41 @@ exports.startCharging = async (req, res) => {
       price_per_kwh: price
     });
 
+    const startTime = new Date();
+
     // Start simulation
     let secondsElapsed = 0;
     let totalEnergy = 0; // kWh
 
     const interval = setInterval(() => {
-      const variation = Math.random() * 0.15 + 0.85;
-      const currentPower = max_power_output * variation;
-      secondsElapsed += 10;
-      totalEnergy += (currentPower * 10) / 3600;
+  const variation = Math.random() * 0.15 + 0.85; // 85% - 100% of max power
+  const currentPower = max_power_output * variation;
 
-      console.log("⚡ Power update:", {
-        connectorId,
-        currentPower: currentPower.toFixed(2),
-        totalEnergy: totalEnergy.toFixed(3),
-        secondsElapsed
-      });
+  secondsElapsed += 1; // 1 second per tick
+  totalEnergy += currentPower / 3600; // energy for 1 second in kWh
 
-      activeSessions[connectorId].latestData = { currentPower, totalEnergy, secondsElapsed };
-    }, 10_000);
+  activeSessions[connectorId].latestData = { currentPower, totalEnergy, secondsElapsed };
+}, 1000); // now every 1 second
+
 
     // Store active session
     activeSessions[connectorId] = {
       sessionId: newSession._id,
       stationId: station._id,
+      stationName: station.station_name,
       chargerId: foundCharger._id,
       price,
       interval,
       latestData: { currentPower: 0, totalEnergy: 0, secondsElapsed: 0 },
-      ev_owner_id
+      ev_owner_id,
+      startTime
     };
 
     res.json({
       message: "Charging started successfully",
       session_id: newSession._id,
+      station_name: station.station_name,
+      start_time: startTime,
       max_power_output,
       price
     });
@@ -180,13 +181,17 @@ exports.stopCharging = async (req, res) => {
 
     clearInterval(session.interval);
 
-    const { latestData, price, sessionId, chargerId } = session;
+    const { latestData, price, sessionId, chargerId, stationName, startTime } = session;
     const totalCost = (latestData.totalEnergy || 0) * price;
+    const endTime = new Date();
+    const durationMs = endTime - startTime;
+    const durationMinutes = (durationMs / 60000).toFixed(1); // minutes
 
     // Complete session in DB
     await chargingSessionController.completeSession(sessionId, {
       energy_delivered: latestData.totalEnergy || 0,
-      total_cost: totalCost
+      total_cost: totalCost,
+      end_time: endTime
     });
 
     // Cleanup memory
@@ -195,8 +200,14 @@ exports.stopCharging = async (req, res) => {
 
     res.json({
       message: "Charging stopped and charger disconnected successfully.",
-      totalEnergy: latestData.totalEnergy || 0,
-      totalCost: totalCost.toFixed(2)
+      station_name: stationName,
+      date: startTime.toISOString().split("T")[0],
+      start_time: startTime,
+      end_time: endTime,
+      duration_minutes: durationMinutes,
+      total_energy_kwh: (latestData.totalEnergy || 0).toFixed(3),
+      cost_per_kwh: price,
+      total_cost: totalCost.toFixed(2)
     });
   } catch (err) {
     console.error("❌ stopCharging error:", err);
