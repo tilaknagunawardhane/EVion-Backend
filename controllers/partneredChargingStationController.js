@@ -10,10 +10,21 @@ const { response } = require('express');
 const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 const Booking2 = require('../models/bookingModel')
+const Booking = require('../models/bookingModel');
 
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
+
+const defaultSchedule = {
+    monday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    tuesday:   { open24Hours: true, closed: false, timeBlocks: [] },
+    wednesday: { open24Hours: true, closed: false, timeBlocks: [] },
+    thursday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    friday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    saturday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    sunday:    { open24Hours: true, closed: false, timeBlocks: [] },
+};
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -227,10 +238,15 @@ const createStation = asyncHandler(async (req, res) => {
             request_status: 'finished'
         });
 
-        // Create station - no changes needed since your model already expects {longitude, latitude}
+        const finalStationData = {
+            ...stationData,
+            station_schedule: stationData.station_schedule || defaultSchedule
+        };
+
+        // Create station
         const newStation = await PartneredChargingStation.create({
             station_owner_id: stationOwnerID,
-            ...stationData
+            ...finalStationData // Use the data with the injected schedule
         });
 
         if (newStation) {
@@ -470,6 +486,150 @@ const updateStation = asyncHandler(async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error updating station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Update station schedule
+const updateStationSchedule = asyncHandler(async (req, res) => {
+    try {
+        const stationId = req.params.id; // Assuming the router uses ':id'
+        const { stationOwnerID, station_schedule } = req.body;
+
+        console.log(`Attempting to update schedule for station ID: ${stationId}`);
+
+        if (!stationOwnerID || !station_schedule) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID and schedule data are required.'
+            });
+        }
+        
+        // 1. Perform a precise update on only the 'station_schedule' field
+        const station = await PartneredChargingStation.findOneAndUpdate(
+            {
+                _id: stationId,
+                station_owner_id: stationOwnerID,
+            },
+            { 
+                $set: { station_schedule: station_schedule } 
+            },
+            { 
+                new: true, 
+                runValidators: true,
+                select: '+station_schedule',
+                // Only validate the schedule path to avoid errors from missing general station fields
+                // fields: { station_schedule: 1, _id: 1, station_owner_id: 1 }
+            }
+        );
+
+        console.log("Station Schedule Updated: ", station?.station_schedule);
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found or not owned by user.'
+            });
+        }
+
+        // Find and Cancel Conflicting Bookings
+
+        const now = new Date();
+        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+        const upcomingBookings = await Booking.find({
+            charging_station_id: stationId,
+            status: 'upcoming',
+            end_time: { $gt: now } 
+        });
+
+        const bookingsToCancel = [];
+
+        upcomingBookings.forEach(booking => {
+            const bookingStartTime = booking.start_time;
+            const bookingEndTime = booking.end_time;
+            
+            // Get the day of the week for the booking (0=Sunday, 1=Monday, ..., 6=Saturday)
+            const bookingDayIndex = bookingStartTime.getDay();
+            const bookingDayKey = daysOfWeek[bookingDayIndex];
+
+            const daySchedule = station_schedule[bookingDayKey];
+            
+            // Assume any day missing from the schedule is treated as fully closed/unavailable 
+            // if the schedule is being explicitly set.
+            const isDayClosed = !daySchedule || daySchedule.closed;
+
+            // If the day is marked as closed or not set, the booking must be cancelled.
+            if (isDayClosed) {
+                bookingsToCancel.push(booking._id);
+                return; // Move to the next booking
+            }
+
+            // If the day has specific time blocks, check if the booking fits inside them.
+            if (!daySchedule.open24Hours && daySchedule.timeBlocks && daySchedule.timeBlocks.length > 0) {
+                
+                let isBookingCovered = false;
+                
+                daySchedule.timeBlocks.forEach(block => {
+                    // Convert block times (HH:MM string) to Date objects for comparison
+                    // WARNING: This assumes all time blocks are within the same day as the booking.
+                    
+                    const [startH, startM] = block.from.split(':').map(Number);
+                    const [endH, endM] = block.to.split(':').map(Number);
+                    
+                    const scheduledStart = new Date(bookingStartTime);
+                    scheduledStart.setHours(startH, startM, 0, 0); // Set time on the booking's date
+                    
+                    const scheduledEnd = new Date(bookingStartTime);
+                    scheduledEnd.setHours(endH, endM, 0, 0);
+
+                    // Check if the booking period is entirely contained within this time block
+                    // A booking is invalid if its start is after the block starts AND its end is before the block ends.
+                    if (bookingStartTime >= scheduledStart && bookingEndTime <= scheduledEnd) {
+                        isBookingCovered = true;
+                    }
+                });
+
+                if (!isBookingCovered) {
+                    bookingsToCancel.push(booking._id);
+                }
+            }
+            // If open24Hours is true, the booking is always covered, so no action needed.
+        });
+
+        if (bookingsToCancel.length > 0) {
+            const cancellationDetails = {
+                status: 'cancelled',
+                cancelled_at: now,
+                cancellation_reason: 'Station schedule updated by owner.',
+                cancelled_by_type: 'StationOwner',
+                cancelled_by_id: stationOwnerID
+            };
+
+            await Booking.updateMany(
+                { _id: { $in: bookingsToCancel } },
+                { $set: cancellationDetails }
+            );
+
+            // You would also queue notifications to the affected EV owners here
+            console.log(`Successfully cancelled ${bookingsToCancel.length} bookings due to schedule change.`);
+        }
+
+        // Optional: Send message/notification about schedule update
+        // await sendAutoMessageToAdmin(stationOwnerID, station, 'schedule_updated'); 
+
+        res.status(200).json({
+            success: true,
+            message: 'Station schedule updated successfully',
+            data: station.station_schedule
+        });
+
+    } catch (error) {
+        console.error('Error updating station schedule:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating station schedule',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -889,6 +1049,7 @@ const getStationById = asyncHandler(async (req, res) => {
             location: station.location || { lat: 0, lng: 0 },
             averageRating: Math.round(averageRating * 10) / 10,
             totalRatings: stationRatings.length,
+            station_schedule: station.station_schedule || {},
             chargers: station.chargers.map(charger => ({
                 charger_name: charger.charger_name || 'Unnamed Charger',
                 power_type: charger.power_type || 'Unknown',
@@ -1077,6 +1238,84 @@ const updateCharger = asyncHandler(async (req, res) => {
             success: false,
             message: 'Error updating charger',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Add a new charger to a station
+const addChargerToStation = asyncHandler(async (req, res) => {
+    
+    const stationId = req.params.stationId; 
+    
+    const { stationOwnerID, ...chargerData } = req.body; 
+
+    // Validation
+    
+    if (!stationOwnerID) {
+        return res.status(400).json({
+            success: false,
+            message: 'Station owner ID is required'
+        });
+    }
+
+    if (!chargerData.charger_name || !chargerData.power_type || !chargerData.max_power_output || !chargerData.price || !chargerData.connector_types || chargerData.connector_types.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Missing required fields for charger: name, power type, max output, price, and at least one connector.'
+        });
+    }
+    
+    const station = await PartneredChargingStation.findOne({
+        _id: stationId,
+        station_owner_id: stationOwnerID
+    });
+
+    if (!station) {
+        return res.status(404).json({
+            success: false,
+            message: 'Charging station not found or not owned by this user.'
+        });
+    }
+
+    try {
+        
+        const newCharger = {
+            ...chargerData,
+            
+            connector_types: chargerData.connector_types.map(ct => ({
+                connector: ct.connector,
+                status: ct.status || 'unavailable'
+            })),
+            
+            max_power_output: parseFloat(chargerData.max_power_output),
+            price: parseFloat(chargerData.price)
+        };
+        
+        // Push the new charger object into the chargers array
+        station.chargers.push(newCharger);
+
+        // Save the updated station document
+        const updatedStation = await station.save();
+        
+        // Find the newly added charger subdocument's ID to return
+        // It's the last element of the updated array.
+        const addedCharger = updatedStation.chargers[updatedStation.chargers.length - 1];
+
+        // Optional: Send a notification/message to Admin about the new charger request
+        await sendAutoMessageToAdmin(stationOwnerID, addedCharger, 'charger_added');
+
+        res.status(201).json({
+            success: true,
+            message: 'Charger added successfully and is now pending review.',
+            data: addedCharger // Return the newly created charger subdocument
+        });
+
+    } catch (error) {
+        
+        console.error('Error adding new charger:', error);
+        res.status(400).json({
+            success: false,
+            message: error.message || 'Validation or database error when adding charger.'
         });
     }
 });
@@ -1347,6 +1586,7 @@ module.exports = {
     getRequestedStations,
     deleteStation,
     updateStation,
+    updateStationSchedule,
     getStationForEdit,
     getStationDetails,
     toggleFavoriteStation,
@@ -1355,6 +1595,7 @@ module.exports = {
     getStationById,
     getStationChargers,
     updateCharger,
+    addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer,
     getStationsForMap

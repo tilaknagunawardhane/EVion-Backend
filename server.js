@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const startScheduler = require('./config/scheduler');
 
 const app = express();
 // Connect to DB
@@ -52,6 +53,7 @@ app.use('/api/station-owner', stationOwnerEarningsRoutes);
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/auth', authRoutes);
 
+startScheduler(); // Initialize the scheduler
 
 // Start server
 const PORT = process.env.PORT || 5000;

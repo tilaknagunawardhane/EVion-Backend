@@ -64,6 +64,21 @@ const bookingSchema = new mongoose.Schema({
         type: Number,
         default: 100,
         required: false
+    },
+    cancellation_reason: {
+        type: String,
+        required: false
+    },
+    cancelled_by_type: {
+        type: String,
+        enum: ['EvOwner', 'StationOwner', 'Admin'],
+        required: false
+    },
+    cancelled_by_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        // Using `refPath` allows referencing different collections based on cancelled_by_type
+        refPath: 'cancelled_by_type',
+        required: false
     }
 },
     {timestamps: true});
