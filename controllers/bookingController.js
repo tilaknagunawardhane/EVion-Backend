@@ -412,6 +412,72 @@ const getConnectorsByStation = asyncHandler(async (req, res) => {
 
 });
 
+const getAllUpcomingBookingSessions = asyncHandler(async (req, res) => {
+    console.log('req: ', req.query);
+    let { ev_user_id } = req.query;
+
+    if (!ev_user_id || !mongoose.Types.ObjectId.isValid(ev_user_id)) {
+        return res.status(400).json({ message: 'Invalid EV user ID' });
+    }
+    ev_user_id = new mongoose.Types.ObjectId(ev_user_id);
+
+    // Get today's date at midnight in IST
+    const todayIST = dayjs().tz('Asia/Kolkata').startOf('day');
+    console.log('Today (IST midnight):', todayIST.format());
+
+    let upcomingSessions = await Booking.find({
+        ev_user_id,
+        booking_date: { $gte: todayIST.toDate() }, // Get bookings from today onwards
+        status: { $in: ['upcoming', 'completed'] } // Include both upcoming and completed sessions from today onwards
+    })
+        .sort({ booking_date: 1, start_time: 1 }) // Sort by date and start time ascending
+        .populate({
+            path: 'charging_station_id',
+            populate: {
+                path: 'chargers.connector_types.connector',
+                model: 'connector'
+            }
+        })
+        .populate({
+            path: 'ev_user_id',
+            populate: [
+                {
+                    path: 'vehicles.make',
+                    model: 'vehiclemake'
+                },
+                {
+                    path: 'vehicles.model',
+                    model: 'vehiclemodel'
+                }
+            ]
+        });
+
+    if (upcomingSessions.length === 0) {
+        return res.json({ message: 'No upcoming booking sessions' });
+    }
+
+    upcomingSessions = upcomingSessions.map(booking => {
+        const station = booking.charging_station_id;
+        const charger = station?.chargers.id(booking.charger_id);
+        const connector = charger?.connector_types.id(booking.connector_type_id);
+        const vehicle = booking.ev_user_id?.vehicles.id(booking.vehicle_id);
+
+        return {
+            ...booking.toObject?.() ?? booking,
+            charger,
+            connector: connector?.connector,
+            vehicle,
+            dateLabel: dayjs(booking.booking_date).format('MMM D, YYYY'),
+            duration: formatDuration(booking.no_of_slots * slot_size),
+            startTime: dayjs.utc(booking.start_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+            endTime: dayjs.utc(booking.end_time).add(5, 'hour').add(30, 'minute').format('h:mm A'),
+        };
+    });
+
+    console.log('Upcoming sessions count:', upcomingSessions.length);
+    return res.status(200).json(upcomingSessions);
+});
+
 module.exports = {
     addBooking,
     getBookedSlots,
@@ -420,4 +486,5 @@ module.exports = {
     getOwnedVehicles,
     getFavouritePartneredStations,
     getConnectorsByStation,
+    getAllUpcomingBookingSessions,
 };
