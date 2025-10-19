@@ -10,7 +10,10 @@ const { submitStationReport,
     saveReportAction,
     updateRefund,
     getEvOwnerReports,
-    getEvOwnerReportDetails
+    getEvOwnerReportDetails,
+    getStationOwnerReports,
+    getStationOwnerReportDetails,
+    getSupportOfficerStats
  } = require('../controllers/reportsController');
 
 router.post('/submit-report', submitStationReport);
@@ -22,7 +25,12 @@ router.get('/report-details/:type/:id', getReportDetails);
 router.put('/save-report-action/:type/:id/action', saveReportAction);
 router.put('/refund-reports/:type/:id/refund', updateRefund);
 
+router.get('/stats', getSupportOfficerStats);
+
 router.get('/get-evowner-reports/:userId', getEvOwnerReports);
 router.get('/get-evowner-report-details/:userId/:type/:reportId', getEvOwnerReportDetails);
+
+router.get('/get-stationowner-reports/:userId', getStationOwnerReports);
+router.get('/get-stationowner-report-details/:stationOwnerId/:type/:reportId', getStationOwnerReportDetails);
 
 module.exports = router;

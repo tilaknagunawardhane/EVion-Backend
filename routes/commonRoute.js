@@ -5,8 +5,12 @@ const { getDistrictsBanks,
     getAllDistricts,
     getConnectorsByType } = require('../controllers/commonController');
 
+const { filteredChargingStations } = require('../utils/chargingStationsFilter');
+
 router.get('/data', getDistrictsBanks);
 router.get('/districts', getAllDistricts);
 router.get('/connectors/:currentType', getConnectorsByType);
+
+router.post('/filteredChargingStations', filteredChargingStations);
 
 module.exports = router;

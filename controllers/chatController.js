@@ -11,7 +11,7 @@ const createAutoChatsForStationOwner = asyncHandler(async (req, res) => {
         if (!stationOwnerId) {
             return res.status(400).json({
                 success: false,
-                message: 'Station owner ID is required'
+                message: 'Station owner ID is required chats'
             });
         }
 
