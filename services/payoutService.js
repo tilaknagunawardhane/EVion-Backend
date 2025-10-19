@@ -3,19 +3,34 @@ const PayoutBatch = require('../models/payoutBatchModel');
 const StationOwner = require('../models/stationOwnerModel');
 const mongoose = require('mongoose');
 const path = require('path');
-// const {imageUpload} = require('../utils/fileUpload');
 const { createCustomUpload, FILE_TYPES } = require('../utils/fileUpload');
 
 class PayoutService {
 
     uploadPaymentProof = createCustomUpload({
-    destination: 'uploads/payouts',
-    fieldName: 'payment-proofs',
-    maxFileSize: 10 * 1024 * 1024,
-    allowedTypes: [...FILE_TYPES.IMAGE, ...FILE_TYPES.DOCUMENT], // ✅ allow PDF too
-  });
+        destination: 'uploads/payouts',
+        fieldName: 'payment-proofs',
+        maxFileSize: 10 * 1024 * 1024,
+        allowedTypes: [...FILE_TYPES.IMAGE, ...FILE_TYPES.DOCUMENT],
+    });
 
-    // Generate monthly payout report
+    // Check if station owner already has payout for the month
+    async checkExistingPayout(stationOwnerId, month, year) {
+        try {
+            const existingPayout = await PayoutBatch.findOne({
+                month: month,
+                year: year,
+                'payouts.station_owner_id': stationOwnerId,
+                status: { $in: ['draft', 'approved', 'completed'] }
+            });
+
+            return existingPayout;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    // Generate monthly payout report with duplicate checks
     async generateMonthlyPayoutReport(month, year) {
         try {
             // Get all pending earnings for the month
@@ -37,12 +52,20 @@ class PayoutService {
                 }
             ]);
 
-            // Get station owner details with bank information
+            // Get station owner details with bank information and check for existing payouts
             const payoutSummary = [];
 
             for (const earning of earnings) {
+                // Check if station owner already has a payout for this month
+                const existingPayout = await this.checkExistingPayout(earning._id, month, year);
+                
+                if (existingPayout) {
+                    console.log(`Skipping station owner ${earning._id} - already has payout in batch ${existingPayout.batch_number}`);
+                    continue; // Skip this station owner
+                }
+
                 const stationOwner = await StationOwner.findById(earning._id)
-                    .populate('bank', 'name'); // Populate bank name
+                    .populate('bank', 'name');
 
                 if (stationOwner) {
                     payoutSummary.push({
@@ -67,13 +90,27 @@ class PayoutService {
         }
     }
 
-    // Create payout batch
+    // Create payout batch with duplicate prevention
     async createPayoutBatch(month, year, adminId) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
         try {
+            // First, check if there's already a batch for this month/year in draft/approved status
+            const existingBatch = await PayoutBatch.findOne({
+                month: month,
+                year: year,
+                status: { $in: ['draft', 'approved'] }
+            }).session(session);
+
+            if (existingBatch) {
+                throw new Error(`A payout batch for ${month}/${year} already exists (${existingBatch.batch_number}). Please complete or cancel it first.`);
+            }
+
             const payoutSummary = await this.generateMonthlyPayoutReport(month, year);
 
             if (payoutSummary.length === 0) {
-                throw new Error('No pending payouts for this period');
+                throw new Error('No pending payouts for this period or all station owners already have payouts');
             }
 
             const totalAmount = payoutSummary.reduce((sum, p) => sum + p.amount, 0);
@@ -94,22 +131,45 @@ class PayoutService {
                 }))
             });
 
-            await payoutBatch.save();
+            await payoutBatch.save({ session });
+
+            // Lock the earnings records by setting payout_batch_id
+            for (const payout of payoutSummary) {
+                await StationEarnings.updateMany(
+                    {
+                        _id: { $in: payout.earnings_ids }
+                    },
+                    {
+                        payout_batch_id: payoutBatch._id,
+                        payout_status: 'processing'
+                    },
+                    { session }
+                );
+            }
+
+            await session.commitTransaction();
 
             return {
                 batch: payoutBatch,
-                details: payoutSummary
+                details: payoutSummary,
+                message: `Created payout batch with ${payoutSummary.length} station owners`
             };
 
         } catch (error) {
+            await session.abortTransaction();
             throw error;
+        } finally {
+            session.endSession();
         }
     }
 
-    // Approve and process payout batch
+    // Enhanced approve payout batch with additional checks
     async approvePayoutBatch(batchId, adminId) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
         try {
-            const batch = await PayoutBatch.findById(batchId);
+            const batch = await PayoutBatch.findById(batchId).session(session);
 
             if (!batch) {
                 throw new Error('Batch not found');
@@ -119,32 +179,127 @@ class PayoutService {
                 throw new Error('Batch already processed');
             }
 
+            // Double-check that no station owners in this batch have been paid in another batch
+            for (const payout of batch.payouts) {
+                const existingPayout = await this.checkExistingPayout(
+                    payout.station_owner_id, 
+                    batch.month, 
+                    batch.year
+                );
+
+                if (existingPayout && existingPayout._id.toString() !== batchId) {
+                    throw new Error(`Station owner ${payout.station_owner_id} already has a payout in batch ${existingPayout.batch_number}`);
+                }
+            }
+
             batch.status = 'approved';
             batch.approved_by = adminId;
-            await batch.save();
+            await batch.save({ session });
 
-            // Update all earnings records to 'processing'
-            await StationEarnings.updateMany(
-                {
-                    month: batch.month,
-                    year: batch.year,
-                    payout_status: 'pending'
-                },
-                {
-                    payout_status: 'processing',
-                    payout_batch_id: batch._id
-                }
-            );
-
+            await session.commitTransaction();
             return batch;
 
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
+    }
+
+    // Get all station owners with pending payouts for a period
+    async getPendingPayoutStationOwners(month, year) {
+        try {
+            const earnings = await StationEarnings.aggregate([
+                {
+                    $match: {
+                        month: month,
+                        year: year,
+                        payout_status: 'pending'
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$station_owner_id',
+                        total_amount: { $sum: '$net_amount' },
+                        transaction_count: { $sum: 1 }
+                    }
+                }
+            ]);
+
+            const result = [];
+
+            for (const earning of earnings) {
+                const stationOwner = await StationOwner.findById(earning._id)
+                    .populate('bank', 'name');
+
+                const existingPayout = await this.checkExistingPayout(earning._id, month, year);
+                const hasExistingPayout = !!existingPayout;
+
+                result.push({
+                    station_owner_id: earning._id,
+                    station_owner_name: stationOwner?.name || 'Unknown',
+                    business_name: stationOwner?.businessName || 'N/A',
+                    bank: stationOwner?.bank?.name || 'N/A',
+                    total_amount: earning.total_amount,
+                    transaction_count: earning.transaction_count,
+                    has_existing_payout: hasExistingPayout,
+                    existing_batch: hasExistingPayout ? existingPayout.batch_number : null,
+                    existing_status: hasExistingPayout ? existingPayout.status : null
+                });
+            }
+
+            return result;
         } catch (error) {
             throw error;
         }
     }
 
-    // Upload payment proof and mark payout as paid
-    // Upload payment proof and mark payout as paid
+    // Cancel a payout batch and release earnings records
+    async cancelPayoutBatch(batchId, adminId) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const batch = await PayoutBatch.findById(batchId).session(session);
+
+            if (!batch) {
+                throw new Error('Batch not found');
+            }
+
+            if (batch.status === 'completed') {
+                throw new Error('Cannot cancel a completed batch');
+            }
+
+            // Release all earnings records back to pending
+            await StationEarnings.updateMany(
+                {
+                    payout_batch_id: batchId
+                },
+                {
+                    payout_status: 'pending',
+                    payout_batch_id: null
+                },
+                { session }
+            );
+
+            // Mark batch as cancelled
+            batch.status = 'failed';
+            batch.notes = `Cancelled by admin ${adminId} at ${new Date().toISOString()}`;
+            await batch.save({ session });
+
+            await session.commitTransaction();
+            return batch;
+
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
+    }
+
+    // Upload payment proof and mark payout as paid (updated with additional checks)
     async uploadPaymentProof(batchId, stationOwnerId, proofData) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -171,6 +326,12 @@ class PayoutService {
             
             if (payout.status === 'paid') {
                 throw new Error('Payout already marked as paid');
+            }
+
+            // Double-check no duplicate payout exists
+            const existingPayout = await this.checkExistingPayout(stationOwnerId, batch.month, batch.year);
+            if (existingPayout && existingPayout._id.toString() !== batchId) {
+                throw new Error(`Station owner already has a payout in batch ${existingPayout.batch_number}`);
             }
             
             // Update payout with proof
@@ -221,7 +382,7 @@ class PayoutService {
         }
     }
 
-    // Process payment for entire batch (mark all payouts as paid)
+    // Process payment for entire batch (mark all payouts as paid) with duplicate checks
     async processBatchPayment(batchId, proofData) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -235,6 +396,21 @@ class PayoutService {
             
             if (batch.status !== 'approved') {
                 throw new Error('Batch must be approved before processing payments');
+            }
+            
+            // Check for duplicates before processing
+            for (const payout of batch.payouts) {
+                if (payout.status === 'pending') {
+                    const existingPayout = await this.checkExistingPayout(
+                        payout.station_owner_id, 
+                        batch.month, 
+                        batch.year
+                    );
+                    
+                    if (existingPayout && existingPayout._id.toString() !== batchId) {
+                        throw new Error(`Station owner ${payout.station_owner_id} already has a payout in batch ${existingPayout.batch_number}`);
+                    }
+                }
             }
             
             // Update all payouts in the batch
@@ -286,7 +462,7 @@ class PayoutService {
         }
     }
 
-    // Get payout batches with filtering
+    // Get payout batches with filtering (no changes needed)
     async getPayoutBatches(filters = {}) {
         try {
             const { status, month, year, search } = filters;
@@ -321,7 +497,7 @@ class PayoutService {
         }
     }
 
-    // Get payout batch details
+    // Get payout batch details (no changes needed)
     async getPayoutBatchDetails(batchId) {
         try {
             const batch = await PayoutBatch.findById(batchId)
@@ -357,7 +533,7 @@ class PayoutService {
         }
     }
 
-    // Get payout statistics for admin dashboard
+    // Get payout statistics for admin dashboard (no changes needed)
     async getAdminPayoutStats() {
         try {
             const currentDate = new Date();
@@ -444,7 +620,7 @@ class PayoutService {
         }
     }
 
-    // Get payout history for station owner
+    // Get payout history for station owner (no changes needed)
     async getStationOwnerPayoutHistory(stationOwnerId) {
         try {
             const earnings = await StationEarnings.find({
@@ -479,96 +655,96 @@ class PayoutService {
         }
     }
 
-    // Get station owner dashboard stats
-async getStationOwnerDashboardStats(stationOwnerId) {
-    try {
-        const currentDate = new Date();
-        const currentMonth = currentDate.getMonth() + 1;
-        const currentYear = currentDate.getFullYear();
+    // Get station owner dashboard stats (no changes needed)
+    async getStationOwnerDashboardStats(stationOwnerId) {
+        try {
+            const currentDate = new Date();
+            const currentMonth = currentDate.getMonth() + 1;
+            const currentYear = currentDate.getFullYear();
 
-        // Current month earnings
-        const currentMonthEarnings = await StationEarnings.aggregate([
-            {
-                $match: {
-                    station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
-                    month: currentMonth,
-                    year: currentYear
+            // Current month earnings
+            const currentMonthEarnings = await StationEarnings.aggregate([
+                {
+                    $match: {
+                        station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
+                        month: currentMonth,
+                        year: currentYear
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total_gross: { $sum: '$gross_amount' },
+                        total_net: { $sum: '$net_amount' },
+                        total_commission: { $sum: '$platform_commission' },
+                        pending_earnings: {
+                            $sum: {
+                                $cond: [{ $eq: ['$payout_status', 'pending'] }, '$net_amount', 0]
+                            }
+                        },
+                        earnings_count: { $sum: 1 }
+                    }
                 }
-            },
-            {
-                $group: {
-                    _id: null,
-                    total_gross: { $sum: '$gross_amount' },
-                    total_net: { $sum: '$net_amount' },
-                    total_commission: { $sum: '$platform_commission' },
-                    pending_earnings: {
-                        $sum: {
-                            $cond: [{ $eq: ['$payout_status', 'pending'] }, '$net_amount', 0]
-                        }
-                    },
-                    earnings_count: { $sum: 1 }
-                }
-            }
-        ]);
+            ]);
 
-        // Last 6 months trend
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+            // Last 6 months trend
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-        const monthlyTrend = await StationEarnings.aggregate([
-            {
-                $match: {
-                    station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
-                    createdAt: { $gte: sixMonthsAgo }
-                }
-            },
-            {
-                $group: {
-                    _id: { year: '$year', month: '$month' },
-                    total_earnings: { $sum: '$net_amount' },
-                    earnings_count: { $sum: 1 }
-                }
-            },
-            { $sort: { '_id.year': -1, '_id.month': -1 } },
-            { $limit: 6 }
-        ]);
+            const monthlyTrend = await StationEarnings.aggregate([
+                {
+                    $match: {
+                        station_owner_id: new mongoose.Types.ObjectId(stationOwnerId),
+                        createdAt: { $gte: sixMonthsAgo }
+                    }
+                },
+                {
+                    $group: {
+                        _id: { year: '$year', month: '$month' },
+                        total_earnings: { $sum: '$net_amount' },
+                        earnings_count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.year': -1, '_id.month': -1 } },
+                { $limit: 6 }
+            ]);
 
-        // Recent payouts
-        const recentPayouts = await PayoutBatch.find({
-            'payouts.station_owner_id': stationOwnerId,
-            status: 'completed'
-        })
-        .sort({ createdAt: -1 })
-        .limit(3)
-        .select('batch_number month year total_amount payouts.$');
-
-        const stats = {
-            current_month: currentMonthEarnings[0] || {
-                total_gross: 0,
-                total_net: 0,
-                total_commission: 0,
-                pending_earnings: 0,
-                earnings_count: 0
-            },
-            monthly_trend: monthlyTrend,
-            recent_payouts: recentPayouts.map(batch => {
-                const payout = batch.payouts.find(p => 
-                    p.station_owner_id.toString() === stationOwnerId
-                );
-                return {
-                    batch_number: batch.batch_number,
-                    month: batch.month,
-                    year: batch.year,
-                    amount: payout?.amount || 0
-                };
+            // Recent payouts
+            const recentPayouts = await PayoutBatch.find({
+                'payouts.station_owner_id': stationOwnerId,
+                status: 'completed'
             })
-        };
+            .sort({ createdAt: -1 })
+            .limit(3)
+            .select('batch_number month year total_amount payouts.$');
 
-        return stats;
-    } catch (error) {
-        throw error;
+            const stats = {
+                current_month: currentMonthEarnings[0] || {
+                    total_gross: 0,
+                    total_net: 0,
+                    total_commission: 0,
+                    pending_earnings: 0,
+                    earnings_count: 0
+                },
+                monthly_trend: monthlyTrend,
+                recent_payouts: recentPayouts.map(batch => {
+                    const payout = batch.payouts.find(p => 
+                        p.station_owner_id.toString() === stationOwnerId
+                    );
+                    return {
+                        batch_number: batch.batch_number,
+                        month: batch.month,
+                        year: batch.year,
+                        amount: payout?.amount || 0
+                    };
+                })
+            };
+
+            return stats;
+        } catch (error) {
+            throw error;
+        }
     }
-}
 }
 
 module.exports = new PayoutService();
