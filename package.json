@@ -6,9 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "dev": "nodemon server.js"
   },
   "repository": {
     "type": "git",
@@ -25,25 +23,18 @@
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dayjs": "^1.11.13",
     "dayjs-plugin-utc": "^0.1.2",
     "dotenv": "^16.6.1",
-    "expo": "^54.0.13",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
-    "ocpp-js": "^1.1.6",
-    "ocpp-rpc": "^2.2.1",
-    "node-cron": "^4.2.1",
-    "socket.io": "^4.8.1",
+    "nodemailer": "^7.0.9",
+    "react-dayjs": "^0.3.2",
     "twilio": "^5.7.1",
-    "uuid": "^11.1.0",
-    "ws": "^8.18.3",
-    "react": "19.1.0",
-    "react-native": "0.81.4"
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
