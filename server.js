@@ -59,6 +59,7 @@ const ocppRoutes = require('./routes/ocppRoutes');
 const walletRoutes = require('./routes/walletRoute');
 const stationOwnerEarningsRoutes = require('./routes/stationOwnerEarningsRoute');
 const stationOwnerRoute = require('./routes/stationOwnerRoute');
+const chargerRoutes = require('./routes/chargerRoute');
 
 app.use('/api/evowners', evOwnerRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -75,6 +76,7 @@ app.use('/api/charging-sessions', chargingSessionRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/station-owner', stationOwnerEarningsRoutes);
 app.use('/api/station-owner-dashboard', stationOwnerRoute);
+app.use('/api/charger', chargerRoutes);
 
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/auth', authRoutes);
