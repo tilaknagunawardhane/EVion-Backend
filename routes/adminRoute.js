@@ -205,5 +205,17 @@ router.get('/payouts/stats', async (req, res) => {
     }
 });
 
+// Cancel payout batch
+router.post('/payouts/batch/:batch_id/cancel/:adminId', async (req, res) => {
+    try {
+        const batch = await PayoutService.cancelPayoutBatch(
+            req.params.batch_id,
+            req.params.adminId
+        );
+        res.json({ success: true, batch });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 module.exports = router;
