@@ -158,7 +158,6 @@ const getAllFlaggedDiscussions = asyncHandler(async (req, res) => {
   // Fetch documents matching the filter, sorted by creation date
   const discussions = await Discussion.find(filter).sort({ createdAt: -1 });
 
-  // Map to the format the frontend expects, including all moderation fields
   const formattedDiscussions = discussions.map(d => ({
     _id: d._id, 
     user: d.user,
@@ -171,7 +170,6 @@ const getAllFlaggedDiscussions = asyncHandler(async (req, res) => {
     comments: d.comments || [],
     createdAt: d.createdAt,
     
-    // Include Flagging and Moderation Fields
     flagged_count: d.flagged_count || { spam: 0, harassment: 0, other: 0 },
     flagged_status: d.flagged_status || false,
   }));
@@ -179,9 +177,7 @@ const getAllFlaggedDiscussions = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: formattedDiscussions });
 });
 
-// POST → add a comment / nested reply
 const addComment = asyncHandler(async (req, res) => {
-  // Expected body: { text, user, replyingTo: commentId (optional) }
   const { text, user, replyingTo } = req.body; 
   const discussionId = req.params.id;
 
@@ -191,7 +187,7 @@ const addComment = asyncHandler(async (req, res) => {
   }
 
   const newCommentOrReply = {
-    _id: new mongoose.Types.ObjectId(), // Generate unique ID for the new item
+    _id: new mongoose.Types.ObjectId(), 
     user: user || "Anonymous",
     text,
     created_at: new Date()
@@ -200,7 +196,6 @@ const addComment = asyncHandler(async (req, res) => {
   let updateResult;
 
   if (replyingTo) {
-    // Handle Nested Reply: Push to the 'replies' array of the target comment
     updateResult = await Discussion.findOneAndUpdate(
       { '_id': discussionId, 'comments._id': replyingTo },
       { $push: { 'comments.$.replies': newCommentOrReply } },
@@ -213,7 +208,6 @@ const addComment = asyncHandler(async (req, res) => {
     }
 
   } else {
-    // Handle Top-Level Comment: Push to the main 'comments' array
     const topLevelComment = { ...newCommentOrReply, replies: [] };
     
     updateResult = await Discussion.findByIdAndUpdate(
@@ -253,24 +247,19 @@ const deleteDiscussion = asyncHandler(async (req, res) => {
     throw new Error("Discussion not found");
   }
 
-  // Respond with a success message for deletion
   res.status(200).json({ 
     success: true, 
     message: "Discussion successfully deleted" 
   });
 });
 
-// GET → get overall community moderation statistics
 const getCommunityStats = asyncHandler(async (req, res) => {
-    // Calculate Total Posts
     const totalPosts = await Discussion.countDocuments({});
 
-    // Calculate Flags Received (Total Flags)
-    // Use aggregation to sum up all 'spam', 'harassment', and 'other' counts
     const flagAggregation = await Discussion.aggregate([
         {
             $group: {
-                _id: null, // Group all documents
+                _id: null, 
                 totalSpam: { $sum: "$flagged_count.spam" },
                 totalHarassment: { $sum: "$flagged_count.harassment" },
                 totalOther: { $sum: "$flagged_count.other" }
@@ -286,7 +275,6 @@ const getCommunityStats = asyncHandler(async (req, res) => {
                              (result.totalOther || 0);
     }
     
-    // Calculate Last Post On
     const lastPost = await Discussion.findOne().sort({ createdAt: -1 }).select('createdAt');
     const lastPostOn = lastPost ? lastPost.createdAt : null;
 
