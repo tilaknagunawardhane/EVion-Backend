@@ -5,7 +5,7 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 // Helper function to get the station's operating status based on its schedule for the current time
 const getScheduleStatus = (station, now) => {
     if (!station.station_schedule) {
-        console.warn(`Station ${station._id} is missing schedule data. Defaulting to unavailable.`);
+        //console.warn(`Station ${station._id} is missing schedule data. Defaulting to unavailable.`);
         return 'unavailable';
     }
 

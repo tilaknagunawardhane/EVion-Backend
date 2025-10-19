@@ -3,24 +3,28 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 const chargingSessionController = require('./chargingSessionController');
 
 // In-memory states
-let activeSessions = {};     // connectorId -> session info
-let chargerLocks = {};       // chargerId -> ev_owner_id (when connected)
+let activeSessions = {}; // connectorId -> session info
+let chargerLocks = {};   // chargerId -> ev_owner_id (when connected)
 
 // ------------------------------------------------------------------
 // 🔌 CONNECT CHARGER
 exports.connectCharger = async (req, res) => {
   try {
-    const { connectorId, ev_owner_id } = req.body;
+    const { connectorId, ev_owner_id } = req.body || {};
     if (!connectorId || !ev_owner_id)
       return res.status(400).json({ error: "connectorId and ev_owner_id required" });
 
-    const station = await PartneredChargingStation.findOne({ "chargers.connector_types._id": connectorId });
+    const station = await PartneredChargingStation.findOne({
+      "chargers.connector_types._id": connectorId
+    });
     if (!station) return res.status(404).json({ error: "Connector not found" });
 
     // Find the charger that has this connector
     let foundCharger;
     for (const charger of station.chargers) {
-      const connector = charger.connector_types.find(c => c._id.toString() === connectorId);
+      const connector = charger.connector_types.find(
+        c => c._id.toString() === connectorId
+      );
       if (connector) {
         foundCharger = charger;
         break;
@@ -59,17 +63,21 @@ exports.connectCharger = async (req, res) => {
 // ⚡ START CHARGING
 exports.startCharging = async (req, res) => {
   try {
-    const { connectorId, booking_id, ev_owner_id } = req.body;
+    const { connectorId, booking_id, ev_owner_id } = req.body || {};
     if (!connectorId || !ev_owner_id)
       return res.status(400).json({ error: "connectorId and ev_owner_id required" });
 
-    const station = await PartneredChargingStation.findOne({ "chargers.connector_types._id": connectorId });
+    const station = await PartneredChargingStation.findOne({
+      "chargers.connector_types._id": connectorId
+    });
     if (!station) return res.status(404).json({ error: "Connector not found" });
 
     // Find charger
     let foundCharger;
     for (const charger of station.chargers) {
-      const connector = charger.connector_types.find(c => c._id.toString() === connectorId);
+      const connector = charger.connector_types.find(
+        c => c._id.toString() === connectorId
+      );
       if (connector) {
         foundCharger = charger;
         break;
@@ -93,6 +101,7 @@ exports.startCharging = async (req, res) => {
     }
 
     const { max_power_output, price } = foundCharger;
+    const startTime = new Date();
 
     // Create DB entry
     const newSession = await chargingSessionController.createSession({
@@ -104,35 +113,52 @@ exports.startCharging = async (req, res) => {
       price_per_kwh: price
     });
 
-    const startTime = new Date();
-
-    // Start simulation
+    // Simulation parameters
     let secondsElapsed = 0;
     let totalEnergy = 0; // kWh
 
-    const interval = setInterval(() => {
-  const variation = Math.random() * 0.15 + 0.85; // 85% - 100% of max power
-  const currentPower = max_power_output * variation;
-
-  secondsElapsed += 1; // 1 second per tick
-  totalEnergy += currentPower / 3600; // energy for 1 second in kWh
-
-  activeSessions[connectorId].latestData = { currentPower, totalEnergy, secondsElapsed };
-}, 1000); // now every 1 second
-
-
-    // Store active session
+    // ✅ Store active session before starting interval
     activeSessions[connectorId] = {
       sessionId: newSession._id,
       stationId: station._id,
       stationName: station.station_name,
       chargerId: foundCharger._id,
       price,
-      interval,
       latestData: { currentPower: 0, totalEnergy: 0, secondsElapsed: 0 },
       ev_owner_id,
-      startTime
+      startTime,
+      interval: null
     };
+
+    // ⚙️ Simulation interval (every 5 seconds instead of 1)
+    const interval = setInterval(() => {
+      const session = activeSessions[connectorId];
+      if (!session) {
+        clearInterval(interval);
+        return;
+      }
+
+      const variation = Math.random() * 0.15 + 0.85; // 85%–100%
+      const currentPower = max_power_output * variation;
+
+      secondsElapsed += 5;
+      totalEnergy += (currentPower * 5) / 3600; // energy for 5 seconds
+
+      session.latestData = { currentPower, totalEnergy, secondsElapsed };
+    }, 5000);
+
+    // Assign interval to session
+    activeSessions[connectorId].interval = interval;
+
+    // ⏱️ Auto-stop failsafe after 2 hours
+    setTimeout(() => {
+      if (activeSessions[connectorId]) {
+        console.log(`⏹️ Auto-stopping charger ${connectorId} due to timeout`);
+        clearInterval(activeSessions[connectorId].interval);
+        delete chargerLocks[activeSessions[connectorId].chargerId];
+        delete activeSessions[connectorId];
+      }
+    }, 2 * 60 * 60 * 1000);
 
     res.json({
       message: "Charging started successfully",
@@ -151,26 +177,31 @@ exports.startCharging = async (req, res) => {
 // ------------------------------------------------------------------
 // 📊 GET CHARGING DATA
 exports.getData = (req, res) => {
-  const { connectorId } = req.query;
-  const session = activeSessions[connectorId];
-  if (!session) return res.status(404).json({ error: "No active session" });
+  try {
+    const { connectorId } = req.query;
+    const session = activeSessions[connectorId];
+    if (!session) return res.status(404).json({ error: "No active session" });
 
-  const { latestData, price } = session;
-  const totalCost = (latestData.totalEnergy || 0) * price;
+    const { latestData, price } = session;
+    const totalCost = (latestData.totalEnergy || 0) * price;
 
-  res.json({
-    power: latestData.currentPower || 0,
-    totalEnergy: latestData.totalEnergy || 0,
-    timeElapsed: latestData.secondsElapsed || 0,
-    cost: totalCost
-  });
+    res.json({
+      power: latestData.currentPower || 0,
+      totalEnergy: latestData.totalEnergy || 0,
+      timeElapsed: latestData.secondsElapsed || 0,
+      cost: totalCost
+    });
+  } catch (err) {
+    console.error("❌ getData error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 };
 
 // ------------------------------------------------------------------
 // ⏹️ STOP CHARGING
 exports.stopCharging = async (req, res) => {
   try {
-    const { connectorId, ev_owner_id } = req.body;
+    const { connectorId, ev_owner_id } = req.body || {};
     const session = activeSessions[connectorId];
     if (!session) return res.status(404).json({ error: "No active session" });
 
@@ -185,7 +216,7 @@ exports.stopCharging = async (req, res) => {
     const totalCost = (latestData.totalEnergy || 0) * price;
     const endTime = new Date();
     const durationMs = endTime - startTime;
-    const durationMinutes = (durationMs / 60000).toFixed(1); // minutes
+    const durationMinutes = (durationMs / 60000).toFixed(1);
 
     // Complete session in DB
     await chargingSessionController.completeSession(sessionId, {
@@ -196,7 +227,7 @@ exports.stopCharging = async (req, res) => {
 
     // Cleanup memory
     delete activeSessions[connectorId];
-    delete chargerLocks[chargerId]; // disconnects automatically
+    delete chargerLocks[chargerId];
 
     res.json({
       message: "Charging stopped and charger disconnected successfully.",
