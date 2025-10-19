@@ -4,6 +4,7 @@ const Admin = require('../models/adminModel');
 const EvOwner = require('../models/evOwnerModel');
 const StationOwner = require('../models/stationOwnerModel');
 const SupportOfficer = require('../models/supportOfficerModel');
+const Wallet = require('../models/walletModel');
 const { imageUpload } = require('../utils/fileUpload');
 const path = require('path');
 const fs = require('fs');
@@ -109,6 +110,12 @@ const registerUser = async (Model, req, res) => {
             password: hashedPassword,
         });
 
+        await Wallet.create({
+            ev_owner_id: user._id,
+            balance: 0,
+            status: 'active'
+        });
+
         const payload = {
             id: user._id,
             email: user.email,
@@ -164,7 +171,7 @@ const registerStationOwner = async (req, res) => {
         email,
         contact,
         password,
-       businessName = null,  // Set default as null
+        businessName = null,  // Set default as null
         businessRegistrationNumber = null,
         taxId = null,
         district = null,
@@ -258,7 +265,7 @@ const registerStationOwner = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Registration successful. Account pending verification.',
+            message: 'Registration successful!',
             accessToken,
             refreshToken,
             user: stationOwnerData

@@ -451,6 +451,14 @@ const updateRequestStatus = asyncHandler(async (req, res) => {
                         });
                     }
                     charger.charger_status = 'open';
+
+                    // Update Connector Status to 'available'
+                    if (charger.connector_types && charger.connector_types.length > 0) {
+                        charger.connector_types.forEach(connectorType => {
+                            connectorType.status = 'available'; 
+                        });
+                    }
+
                     const otherChargers = request.chargers.filter(c => c._id.toString() !== chargerId);
                     const allOtherChargersPending = otherChargers.every(c =>
                         ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)

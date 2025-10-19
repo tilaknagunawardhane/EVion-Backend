@@ -3,6 +3,28 @@ const PartneredChargingStation = require('../models/partneredChargingStationMode
 const StationOwner = require('../models/stationOwnerModel');
 const path = require('path');
 const EvOwner = require('../models/evOwnerModel');
+const Admin = require('../models/adminModel');
+const Chat = require('../models/chatModel');
+const Message = require('../models/messageModel');
+const { response } = require('express');
+const SupportOfficer = require('../models/supportOfficerModel')
+const { notifyNewStation } = require('../middlewares/notificationMiddleware')
+const Booking2 = require('../models/bookingModel')
+const Booking = require('../models/bookingModel');
+
+const StationReport = require('../models/stationReportModel');
+const ChargerReport = require('../models/chargerReportModel');
+const BookingReport = require('../models/bookingReportModel');
+
+const defaultSchedule = {
+    monday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    tuesday:   { open24Hours: true, closed: false, timeBlocks: [] },
+    wednesday: { open24Hours: true, closed: false, timeBlocks: [] },
+    thursday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    friday:    { open24Hours: true, closed: false, timeBlocks: [] },
+    saturday:  { open24Hours: true, closed: false, timeBlocks: [] },
+    sunday:    { open24Hours: true, closed: false, timeBlocks: [] },
+};
 
 const checkStationsExist = asyncHandler(async (req, res) => {
     try {
@@ -25,7 +47,7 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         // 3. Check conditions
         const hasApprovedStation = stations.some(station => {
 
-            return station.chargers && station.chargers.some(charger => 
+            return station.chargers && station.chargers.some(charger =>
                 ['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
             );
         });
@@ -49,6 +71,140 @@ const checkStationsExist = asyncHandler(async (req, res) => {
         });
     }
 });
+
+const sendAutoMessageToAdmin = async (stationOwnerId, stationData, actionType) => {
+    try {
+        const stationOwner = await StationOwner.findById(stationOwnerId);
+        const admin = await Admin.findOne();
+        const supportOfficer = await SupportOfficer.findOne();
+
+        console.log('Station Owner:', stationOwner);
+        console.log('Admin:', admin);
+        console.log('Support Officer:', supportOfficer);
+
+        if (!admin || !stationOwner || !supportOfficer) {
+            console.log('Missing required users:', { admin: !!admin, stationOwner: !!stationOwner, supportOfficer: !!supportOfficer });
+            return;
+        }
+
+        // Find or create admin chat (FIXED QUERY)
+        let adminChat = await Chat.findOne({
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': admin._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'admin' }
+            ]
+        });
+
+        // Find or create support officer chat (FIXED QUERY)
+        let supportChat = await Chat.findOne({
+            $and: [
+                { 'participants.user_id': stationOwnerId },
+                { 'participants.user_id': supportOfficer._id },
+                { 'participants.role': 'stationowner' },
+                { 'participants.role': 'supportofficer' }
+            ]
+        });
+
+        console.log('Existing admin chat:', adminChat);
+        console.log('Existing support chat:', supportChat);
+
+        // Create admin chat if it doesn't exist
+        if (!adminChat) {
+            adminChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: admin._id,
+                        role: 'admin',
+                        modelType: 'Admin'
+                    }
+                ],
+                topic: 'stationApproval',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new admin chat:', adminChat._id);
+        }
+
+        // Create support chat if it doesn't exist
+        if (!supportChat) {
+            supportChat = await Chat.create({
+                participants: [
+                    {
+                        user_id: stationOwnerId,
+                        role: 'stationowner',
+                        modelType: 'stationowner'
+                    },
+                    {
+                        user_id: supportOfficer._id,
+                        role: 'supportofficer',
+                        modelType: 'SupportOfficer'
+                    }
+                ],
+                topic: 'support',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new support chat:', supportChat._id);
+        }
+
+        let message = '';
+
+        if (actionType === 'station_added') {
+            message = `🚗 New station "${stationData.station_name}" added by ${stationOwner.business_name || stationOwner.name}.\n\n` +
+                `📍 Location: ${stationData.city}, ${stationData.district}\n\n` +
+                `🔌 Chargers: ${stationData.chargers.length} charger(s) added\n\n` +
+                `Please review and approve.`;
+        }
+        else if (actionType === 'station_updated') {
+            message = `📝 Station "${stationData.station_name}" updated by ${stationOwner.business_name || stationOwner.name}.\n` +
+                `Changes include station details modification.`;
+        }
+        else if (actionType === 'charger_added') {
+            message = `🔌 New charger added to station "${stationData.station_name}" by ${stationOwner.business_name || stationOwner.name}.\n` +
+                `Total chargers now: ${stationData.chargers.length}`;
+        }
+
+        // Send the auto message to ADMIN - CORRECTED seenBy
+        await Message.create({
+            chat_id: adminChat._id,
+            sender: {
+                user_id: admin._id,    // Sent by admin (system message)
+                role: 'admin'
+            },
+            message: message,
+            messageType: 'system',
+            timestamp: new Date(),
+            seenBy: [{
+                userId: stationOwnerId,  // ✅ Station owner has seen this message
+                seenAt: new Date()
+            }]
+        });
+
+        // Update last message in admin chat
+        await Chat.findByIdAndUpdate(adminChat._id, {
+            lastMessage: {
+                text: message,
+                senderId: admin._id,
+                senderRole: 'admin',
+                timestamp: new Date()
+            },
+            updatedAt: new Date()
+        });
+
+        console.log('Auto message sent to admin successfully');
+
+    } catch (error) {
+        console.error('Auto message error:', error);
+        // Don't throw error - this is a background process
+    }
+};
 
 const createStation = asyncHandler(async (req, res) => {
     try {
@@ -82,18 +238,29 @@ const createStation = asyncHandler(async (req, res) => {
             request_status: 'finished'
         });
 
+        const finalStationData = {
+            ...stationData,
+            station_schedule: stationData.station_schedule || defaultSchedule
+        };
+
         // Create station
         const newStation = await PartneredChargingStation.create({
             station_owner_id: stationOwnerID,
-            ...stationData
+            ...finalStationData // Use the data with the injected schedule
         });
 
-        res.status(201).json({
-            success: true,
-            message: 'Station request submitted successfully',
-            data: newStation,
-            shouldNavigateToDashboard: hasFinishedStation // Add this flag
-        });
+        if (newStation) {
+            await sendAutoMessageToAdmin(stationOwnerID, newStation, 'station_added');
+            await notifyNewStation(newStation, owner)
+
+            console.log("Go here");
+            res.status(201).json({
+                success: true,
+                message: 'Station request submitted successfully',
+                data: newStation,
+                shouldNavigateToDashboard: hasFinishedStation // Add this flag
+            });
+        }
 
     } catch (error) {
         console.error('Station creation error:', error);
@@ -130,9 +297,9 @@ const getRequestedStations = asyncHandler(async (req, res) => {
         const filteredStations = stations.filter(station => {
             // If station has no chargers, include it
             if (!station.chargers || station.chargers.length === 0) return true;
-            
+
             // Check if ALL chargers don't have the excluded statuses
-            return station.chargers.every(charger => 
+            return station.chargers.every(charger =>
                 !['open', 'unavailable', 'disabled_by_SO', 'deleted'].includes(charger.charger_status)
             );
         });
@@ -189,7 +356,7 @@ const getRequestedStations = asyncHandler(async (req, res) => {
             return {
                 _id: safeStation._id,
                 name: safeStation.station_name,
-                status: safeStation.request_status,
+                // status: safeStation.request_status,
                 address: safeStation.address,
                 city: safeStation.city,
                 district: safeStation.district?.name || 'Unknown',
@@ -285,16 +452,20 @@ const getStationForEdit = asyncHandler(async (req, res) => {
 const updateStation = asyncHandler(async (req, res) => {
     try {
         const { stationOwnerID, ...updateData } = req.body;
+        console.log("station id is ", req.params.id);
+        console.log("Station owner is ", stationOwnerID);
 
         const station = await PartneredChargingStation.findOneAndUpdate(
             {
                 _id: req.params.id,
                 station_owner_id: stationOwnerID,
-                request_status: { $in: ['processing', 'rejected'] } // Only allow editing if not approved
+                // request_status: { $in: ['processing', 'rejected'] } // Only allow editing if not approved
             },
             updateData,
             { new: true, runValidators: true }
         );
+
+        console.log("Station Updated ", station)
 
         if (!station) {
             return res.status(404).json({
@@ -302,6 +473,8 @@ const updateStation = asyncHandler(async (req, res) => {
                 message: 'Station not found, not owned by user, or already approved'
             });
         }
+
+        await sendAutoMessageToAdmin(stationOwnerID, station, 'station_updated');
 
         res.status(200).json({
             success: true,
@@ -318,11 +491,155 @@ const updateStation = asyncHandler(async (req, res) => {
     }
 });
 
+// Update station schedule
+const updateStationSchedule = asyncHandler(async (req, res) => {
+    try {
+        const stationId = req.params.id; // Assuming the router uses ':id'
+        const { stationOwnerID, station_schedule } = req.body;
+
+        console.log(`Attempting to update schedule for station ID: ${stationId}`);
+
+        if (!stationOwnerID || !station_schedule) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID and schedule data are required.'
+            });
+        }
+        
+        // 1. Perform a precise update on only the 'station_schedule' field
+        const station = await PartneredChargingStation.findOneAndUpdate(
+            {
+                _id: stationId,
+                station_owner_id: stationOwnerID,
+            },
+            { 
+                $set: { station_schedule: station_schedule } 
+            },
+            { 
+                new: true, 
+                runValidators: true,
+                select: '+station_schedule',
+                // Only validate the schedule path to avoid errors from missing general station fields
+                // fields: { station_schedule: 1, _id: 1, station_owner_id: 1 }
+            }
+        );
+
+        console.log("Station Schedule Updated: ", station?.station_schedule);
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found or not owned by user.'
+            });
+        }
+
+        // Find and Cancel Conflicting Bookings
+
+        const now = new Date();
+        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+        const upcomingBookings = await Booking.find({
+            charging_station_id: stationId,
+            status: 'upcoming',
+            end_time: { $gt: now } 
+        });
+
+        const bookingsToCancel = [];
+
+        upcomingBookings.forEach(booking => {
+            const bookingStartTime = booking.start_time;
+            const bookingEndTime = booking.end_time;
+            
+            // Get the day of the week for the booking (0=Sunday, 1=Monday, ..., 6=Saturday)
+            const bookingDayIndex = bookingStartTime.getDay();
+            const bookingDayKey = daysOfWeek[bookingDayIndex];
+
+            const daySchedule = station_schedule[bookingDayKey];
+            
+            // Assume any day missing from the schedule is treated as fully closed/unavailable 
+            // if the schedule is being explicitly set.
+            const isDayClosed = !daySchedule || daySchedule.closed;
+
+            // If the day is marked as closed or not set, the booking must be cancelled.
+            if (isDayClosed) {
+                bookingsToCancel.push(booking._id);
+                return; // Move to the next booking
+            }
+
+            // If the day has specific time blocks, check if the booking fits inside them.
+            if (!daySchedule.open24Hours && daySchedule.timeBlocks && daySchedule.timeBlocks.length > 0) {
+                
+                let isBookingCovered = false;
+                
+                daySchedule.timeBlocks.forEach(block => {
+                    // Convert block times (HH:MM string) to Date objects for comparison
+                    // WARNING: This assumes all time blocks are within the same day as the booking.
+                    
+                    const [startH, startM] = block.from.split(':').map(Number);
+                    const [endH, endM] = block.to.split(':').map(Number);
+                    
+                    const scheduledStart = new Date(bookingStartTime);
+                    scheduledStart.setHours(startH, startM, 0, 0); // Set time on the booking's date
+                    
+                    const scheduledEnd = new Date(bookingStartTime);
+                    scheduledEnd.setHours(endH, endM, 0, 0);
+
+                    // Check if the booking period is entirely contained within this time block
+                    // A booking is invalid if its start is after the block starts AND its end is before the block ends.
+                    if (bookingStartTime >= scheduledStart && bookingEndTime <= scheduledEnd) {
+                        isBookingCovered = true;
+                    }
+                });
+
+                if (!isBookingCovered) {
+                    bookingsToCancel.push(booking._id);
+                }
+            }
+            // If open24Hours is true, the booking is always covered, so no action needed.
+        });
+
+        if (bookingsToCancel.length > 0) {
+            const cancellationDetails = {
+                status: 'cancelled',
+                cancelled_at: now,
+                cancellation_reason: 'Station schedule updated by owner.',
+                cancelled_by_type: 'StationOwner',
+                cancelled_by_id: stationOwnerID
+            };
+
+            await Booking.updateMany(
+                { _id: { $in: bookingsToCancel } },
+                { $set: cancellationDetails }
+            );
+
+            // You would also queue notifications to the affected EV owners here
+            console.log(`Successfully cancelled ${bookingsToCancel.length} bookings due to schedule change.`);
+        }
+
+        // Optional: Send message/notification about schedule update
+        // await sendAutoMessageToAdmin(stationOwnerID, station, 'schedule_updated'); 
+
+        res.status(200).json({
+            success: true,
+            message: 'Station schedule updated successfully',
+            data: station.station_schedule
+        });
+
+    } catch (error) {
+        console.error('Error updating station schedule:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating station schedule',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 //ev owner get station details
 const getStationDetails = asyncHandler(async (req, res) => {
     try {
         const { stationId } = req.params;
-        const {userID} = req.body;
+        const { userID } = req.body;
         // console.log('Fetching details for station:', stationId);
         // console.log('User ID is :', userID);
 
@@ -340,9 +657,9 @@ const getStationDetails = asyncHandler(async (req, res) => {
             .lean();
 
         if (!station) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Station not found' 
+                message: 'Station not found'
             });
         }
 
@@ -375,7 +692,7 @@ const getStationDetails = asyncHandler(async (req, res) => {
                 connector_types: charger.connector_types.map(connectorType => ({
                     connector_id: connectorType._id,
                     status: connectorType.status,
-                    connector: connectorType.connector || null ,// Handle missing connectors
+                    connector: connectorType.connector || null,// Handle missing connectors
                     connector_img: connectorType.connector?.image ? path.join('/uploads', connectorType.connector.image) : null
                 })),
                 charger_status: charger.charger_status || 'processing',
@@ -407,7 +724,7 @@ const toggleFavoriteStation = asyncHandler(async (req, res) => {
         const { userId } = req.body;
 
         // Validate inputs
-         if (!stationId || !userId) {
+        if (!stationId || !userId) {
             return res.status(400).json({
                 success: false,
                 message: 'Station ID and User ID are required'
@@ -469,7 +786,7 @@ const toggleFavoriteStation = asyncHandler(async (req, res) => {
 const getFavoriteStations = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
-        
+
         // Validate user ID
         if (!userId) {
             return res.status(400).json({
@@ -556,70 +873,85 @@ const getFavoriteStations = asyncHandler(async (req, res) => {
 
 // Get all stations for a specific owner
 const getOwnerStations = asyncHandler(async (req, res) => {
-  try {
-    console.log('Fetching owner stations', req.query);
-    const stationOwnerID = req.query.stationOwnerId || req.user?._id; // Assuming auth middleware sets req.user
+    try {
+        console.log('Fetching owner stations', req.query);
+        const stationOwnerID = req.query.stationOwnerId || req.user?._id; // Assuming auth middleware sets req.user
 
-    if (!stationOwnerID) {
-      return res.status(400).json({
-        success: false,
-        message: 'Station owner ID is required'
-      });
-    }
-
-    // Verify station owner exists
-    const owner = await StationOwner.findById(stationOwnerID);
-    if (!owner) {
-      return res.status(404).json({
-        success: false,
-        message: 'Station owner not found'
-      });
-    }
-
-    // Fetch all stations for the owner
-    const stations = await PartneredChargingStation.find({
-      station_owner_id: stationOwnerID
-    })
-      .populate('district', 'name')
-      .populate({
-        path: 'chargers',
-        populate: {
-          path: 'connector_types.connector',
-          select: 'type_name',
-          model: 'connector'
-        }
-      })
-      .lean();
-
-    // Format stations to match frontend expectations
-    const formattedStations = stations.map(station => {
-        const isNewStation = station.chargers.every(c =>
-            ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
-        );
-        let displayStatus = station.station_status;
-        if (isNewStation && station.station_status === 'unavailable') {
-            displayStatus = 'processing';
+        if (!stationOwnerID) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required(Owner Stations)'
+            });
         }
 
-        return {
-            id: station._id.toString(),
-            name: station.station_name || 'Unnamed Station',
-            status: displayStatus.toLowerCase(),
-            address: `${station.address || ''}, ${station.city || ''}`.trim(),
-            addressLine: station.address || 'No Address Provided',
-            city: station.city || 'N/A',
-            district: station.district?.name || 'N/A',
-            electricityProvider: station.electricity_provider || 'N/A',
-            powerSource: station.power_source || 'N/A',
-            location: station.location || { lat: 0, lng: 0 },
-            chargers: station.chargers.map(charger => ({
-                name: charger.charger_name || 'Unnamed Charger',
-                powerType: charger.power_type || 'Unknown',
-                maxPower: charger.max_power_output || 0,
-                price: charger.price || 0,
-                connectors: charger.connector_types
-                    .map(ct => ct.connector?.type_name || 'N/A')
-                    .filter(Boolean)
+        // Verify station owner exists
+        const owner = await StationOwner.findById(stationOwnerID);
+        if (!owner) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station owner not found'
+            });
+        }
+
+        // Fetch all stations for the owner
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: stationOwnerID
+        })
+            .populate('district', 'name')
+            .populate({
+                path: 'chargers',
+                populate: {
+                    path: 'connector_types.connector',
+                    select: 'type_name',
+                    model: 'connector'
+                }
+            })
+            .lean();
+
+        // Format stations to match frontend expectations
+        const formattedStations = stations.map(station => {
+            const isNewStation = station.chargers.every(c =>
+                ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+            );
+            let displayStatus = station.station_status;
+            if (isNewStation && station.station_status === 'unavailable') {
+                // change 'unavailable' to 'reviewing' for new stations
+                displayStatus = 'reviewing';
+            }
+
+            if (!isNewStation && station.station_status === 'unavailable') {
+                // change 'unavailable' to 'reviewing' for new stations
+                displayStatus = 'closed';
+            }
+
+            // Calculate average rating for the station
+            const stationRatings = station.ratings || [];
+            const averageRating = stationRatings.length > 0
+                ? stationRatings.reduce((sum, rating) => sum + rating.stars, 0) / stationRatings.length
+                : 0;
+
+            return {
+                id: station._id.toString(),
+                name: station.station_name || 'Unnamed Station',
+                status: displayStatus.toLowerCase(),
+                address: `${station.address || ''}, ${station.city || ''}, ${station.district?.name || ''}`.trim(),
+                addressLine: station.address || 'No Address Provided',
+                city: station.city || 'N/A',
+                district: station.district?.name || 'N/A',
+                electricityProvider: station.electricity_provider || 'N/A',
+                powerSource: station.power_source || 'N/A',
+                location: station.location || { lat: 0, lng: 0 },
+                averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+                totalRatings: stationRatings.length,
+                chargers: station.chargers.map(charger => ({
+                    name: charger.charger_name || 'Unnamed Charger',
+                    powerType: charger.power_type || 'Unknown',
+                    maxPower: charger.max_power_output || 0,
+                    price: charger.price || 0,
+                    chargerStatus: charger.charger_status || 'processing',
+                    connectors: charger.connector_types
+                        .map(ct => ct.connector?.type_name || 'N/A')
+                        .filter(Boolean)
                 })),
                 dateOfRequest: station.createdAt
                     ? new Date(station.createdAt).toLocaleString('en-US', {
@@ -629,24 +961,631 @@ const getOwnerStations = asyncHandler(async (req, res) => {
                         hour: '2-digit',
                         minute: '2-digit',
                         hour12: true
-                        })
+                    })
                     : null
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: formattedStations
+        });
+    } catch (error) {
+        console.error('Error fetching owner stations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get a single station by ID by Station Owner
+const getStationById = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const stationOwnerID = req.query.stationOwnerId;
+
+        console.log('Request received for station:', stationId);
+        console.log('Station owner ID:', stationOwnerID);
+
+        if (!stationOwnerID) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required(Get Station by ID)'
+            });
+        }
+
+        // Fetch the station
+        const station = await PartneredChargingStation.findOne({
+            _id: stationId,
+            station_owner_id: stationOwnerID
+        })
+            .populate('district', 'name')
+            .populate({
+                path: 'chargers.connector_types.connector',
+                select: 'type_name',
+                model: 'connector'
+            })
+            .lean();
+
+        console.log('Found station:', station);
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        // Format station to match frontend expectations
+        const isNewStation = station.chargers.every(c =>
+            ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+        );
+        let displayStatus = station.station_status;
+        if (isNewStation && station.station_status === 'unavailable') {
+            displayStatus = 'reviewing';
+        }
+
+        if (!isNewStation && station.station_status === 'unavailable') {
+            displayStatus = 'closed';
+        }
+
+        // Calculate average rating for the station
+        const stationRatings = station.ratings || [];
+        const averageRating = stationRatings.length > 0
+            ? stationRatings.reduce((sum, rating) => sum + rating.stars, 0) / stationRatings.length
+            : 0;
+
+        // Ensure location data is properly formatted
+        const locationData = station.location || {};
+        const formattedLocation = {
+            latitude: locationData.latitude || locationData.lat || 0,
+            longitude: locationData.longitude || locationData.lng || 0
         };
+
+        const formattedStation = {
+            _id: station._id.toString(),
+            station_name: station.station_name || 'Unnamed Station',
+            status: displayStatus.toLowerCase(),
+            address: station.address || '',
+            city: station.city || '',
+            district: station.district?.name || '',
+            electricity_provider: station.electricity_provider || 'N/A',
+            power_source: station.power_source || 'N/A',
+            location: formattedLocation, // Use formatted location
+            averageRating: Math.round(averageRating * 10) / 10,
+            totalRatings: stationRatings.length,
+            station_schedule: station.station_schedule || {},
+            chargers: station.chargers.map(charger => ({
+                charger_name: charger.charger_name || 'Unnamed Charger',
+                power_type: charger.power_type || 'Unknown',
+                max_power_output: charger.max_power_output || 0,
+                price: charger.price || 0,
+                charger_status: charger.charger_status || 'processing',
+                connector_types: charger.connector_types.map(ct => ({
+                    connector: {
+                        _id: ct.connector?._id?.toString(),
+                        type_name: ct.connector?.type_name || 'N/A'
+                    },
+                    status: ct.status || 'unavailable'
+                })),
+                createdAt: charger.createdAt,
+                updatedAt: charger.updatedAt
+            })),
+            createdAt: station.createdAt
+        };
+
+        res.status(200).json({
+            success: true,
+            data: formattedStation
+        });
+    } catch (error) {
+        console.error('Error fetching station:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching station',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get all chargers for a specific station by Station Owner
+const getStationChargers = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const stationOwnerID = req.query.stationOwnerId || req.user?._id;
+
+        if (!stationOwnerID) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required(Get Station Chargers)'
+            });
+        }
+
+        // Verify station exists and belongs to the owner
+        const station = await PartneredChargingStation.findOne({
+            _id: stationId,
+            station_owner_id: stationOwnerID
+        })
+            .populate({
+                path: 'chargers.connector_types.connector',
+                select: 'type_name',
+                model: 'connector'
+            })
+            .lean();
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        // Format chargers data - chargers are embedded in the station document
+        const formattedChargers = station.chargers.map(charger => ({
+            _id: charger._id.toString(),
+            charger_name: charger.charger_name || 'Unnamed Charger',
+            power_type: charger.power_type || 'Unknown',
+            max_power_output: charger.max_power_output || 0,
+            price: charger.price || 0,
+            charger_status: charger.charger_status || 'processing',
+            connector_types: charger.connector_types.map(ct => ({
+                connector: {
+                    _id: ct.connector?._id?.toString(),
+                    type_name: ct.connector?.type_name || 'N/A'
+                },
+                status: ct.status || 'unavailable'
+            })),
+            createdAt: charger.createdAt,
+            updatedAt: charger.updatedAt
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: formattedChargers
+        });
+    } catch (error) {
+        console.error('Error fetching station chargers:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching station chargers',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+const updateCharger = asyncHandler(async (req, res) => {
+    try {
+        const { stationId, chargerId } = req.params;
+        const stationOwnerID = req.query.stationOwnerId;
+        const updateData = req.body;
+
+        if (!stationOwnerID) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required'
+            });
+        }
+
+        // Find station
+        const station = await PartneredChargingStation.findOne({
+            _id: stationId,
+            station_owner_id: stationOwnerID
+        });
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        // Find charger inside station
+        const charger = station.chargers.id(chargerId);
+        if (!charger) {
+            return res.status(404).json({
+                success: false,
+                message: 'Charger not found'
+            });
+        }
+
+        // Update fields
+        charger.charger_name = updateData.charger_name || charger.charger_name;
+        charger.power_type = updateData.power_type || charger.power_type;
+        charger.max_power_output = updateData.max_power_output || charger.max_power_output;
+        charger.price = updateData.price || charger.price;
+        charger.charger_status = updateData.charger_status || charger.charger_status;
+
+        if (Array.isArray(updateData.connector_types)) {
+            charger.connector_types = updateData.connector_types.map((ct, index) => ({
+                connector: ct.connector, // must be ObjectId
+                status: ct.status ?? charger.connector_types[index]?.status
+            }));
+        }
+
+        await station.save();
+
+        // Re-fetch with population
+        const updatedStation = await PartneredChargingStation.findById(stationId)
+            .populate('chargers.connector_types.connector', 'type_name');
+
+
+        const updatedCharger = updatedStation.chargers.id(chargerId);
+        if (!updatedCharger) {
+            return res.status(404).json({
+                success: false,
+                message: 'Updated charger not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                _id: updatedCharger._id.toString(),
+                charger_name: updatedCharger.charger_name,
+                power_type: updatedCharger.power_type,
+                max_power_output: updatedCharger.max_power_output,
+                price: updatedCharger.price,
+                charger_status: updatedCharger.charger_status,
+                connector_types: Array.isArray(updatedCharger.connector_types) ? updatedCharger.connector_types.map(ct => ({
+                    connector: {
+                        _id: ct.connector?._id?.toString(),
+                        type_name: ct.connector?.type_name || 'N/A'
+                    },
+                    status: ct.status || 'unavailable'
+                })) : [],
+                createdAt: updatedCharger.createdAt,
+                updatedAt: updatedCharger.updatedAt
+            },
+        });
+    } catch (error) {
+        console.error('Error updating charger:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating charger',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Add a new charger to a station
+const addChargerToStation = asyncHandler(async (req, res) => {
+    
+    const stationId = req.params.stationId; 
+    
+    const { stationOwnerID, ...chargerData } = req.body; 
+
+    // Validation
+    
+    if (!stationOwnerID) {
+        return res.status(400).json({
+            success: false,
+            message: 'Station owner ID is required'
+        });
+    }
+
+    if (!chargerData.charger_name || !chargerData.power_type || !chargerData.max_power_output || !chargerData.price || !chargerData.connector_types || chargerData.connector_types.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Missing required fields for charger: name, power type, max output, price, and at least one connector.'
+        });
+    }
+    
+    const station = await PartneredChargingStation.findOne({
+        _id: stationId,
+        station_owner_id: stationOwnerID
     });
+
+    if (!station) {
+        return res.status(404).json({
+            success: false,
+            message: 'Charging station not found or not owned by this user.'
+        });
+    }
+
+    try {
+        
+        const newCharger = {
+            ...chargerData,
+            
+            connector_types: chargerData.connector_types.map(ct => ({
+                connector: ct.connector,
+                status: ct.status || 'unavailable'
+            })),
+            
+            max_power_output: parseFloat(chargerData.max_power_output),
+            price: parseFloat(chargerData.price)
+        };
+        
+        // Push the new charger object into the chargers array
+        station.chargers.push(newCharger);
+
+        // Save the updated station document
+        const updatedStation = await station.save();
+        
+        // Find the newly added charger subdocument's ID to return
+        // It's the last element of the updated array.
+        const addedCharger = updatedStation.chargers[updatedStation.chargers.length - 1];
+
+        // Optional: Send a notification/message to Admin about the new charger request
+        await sendAutoMessageToAdmin(stationOwnerID, addedCharger, 'charger_added');
+
+        res.status(201).json({
+            success: true,
+            message: 'Charger added successfully and is now pending review.',
+            data: addedCharger // Return the newly created charger subdocument
+        });
+
+    } catch (error) {
+        
+        console.error('Error adding new charger:', error);
+        res.status(400).json({
+            success: false,
+            message: error.message || 'Validation or database error when adding charger.'
+        });
+    }
+});
+
+// Get stations for support officer's table
+const getAllStationsForSupportOfficer = asyncHandler(async (req, res) => {
+    try {
+        const {
+            status,
+            district,
+            city,
+            electricity_provider,
+            power_source,
+            page = 1,
+            limit = 10,
+            search
+        } = req.query;
+
+        const query = {};
+
+        if (status && status !== 'all') {
+            query.station_status = status;
+        }
+        if (district && district !== 'all') {
+            query.district = district;
+        }
+        if (city && city !== 'all') {
+            query.city = new RegExp(city, 'i');
+        }
+        if (electricity_provider && electricity_provider !== 'all') {
+            query.electricity_provider = electricity_provider;
+        }
+        if (power_source && power_source !== 'all') {
+            query.power_source = power_source;
+        }
+
+        if (search) {
+            query.$or = [
+                { station_name: { $regex: search, $options: 'i' } },
+                { address: { $regex: search, $options: 'i' } },
+                { city: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const stations = await PartneredChargingStation.find(query)
+            .populate('district', 'name')
+            .populate('station_owner_id', 'name email contact_number')
+            .select('station_name district address city electricity_provider power_source station_status chargers ratings createdAt updatedAt')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const totalCount = await PartneredChargingStation.countDocuments(query);
+
+        const stationsWithChargerCount = stations.map(station => {
+            const hasChargers = station.chargers && Array.isArray(station.chargers) && station.chargers.length > 0;
+
+            let availableChargers = 0;
+            let totalChargers = 0;
+
+            if (hasChargers) {
+                availableChargers = station.chargers.filter(charger =>
+                    charger.charger_status === 'open' &&
+                    charger.connector_types &&
+                    Array.isArray(charger.connector_types) &&
+                    charger.connector_types.some(connector => connector.status === 'available')
+                ).length;
+
+                totalChargers = station.chargers.length;
+            }
+
+            return {
+                ...station,
+                available_chargers: availableChargers,
+                total_chargers: totalChargers,
+                district_name: station.district?.name || 'Unknown District'
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: stationsWithChargerCount,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching stations for support officer:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get station details for support officer's table
+const getStationDetailsForSupportOfficer = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+
+        if (!stationId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID is required'
+            });
+        }
+
+        const station = await PartneredChargingStation.findById(stationId)
+            .populate('district', 'name')
+            .populate('station_owner_id', 'name email contact')
+            .populate({
+                path: 'chargers.connector_types.connector',
+                model: 'connector',
+                select: 'type_name current_type'
+            })
+            .lean();
+
+        const stationReports = await StationReport.countDocuments({
+            station_id: stationId
+        });
+
+        const chargerReports = await ChargerReport.countDocuments({
+            station_id: stationId
+        });
+
+        // First get all bookings for this station
+        const stationBookings = await Booking2.find({
+            charging_station_id: stationId
+        }).select('_id');
+
+        const bookingIds = stationBookings.map(booking => booking._id);
+
+        const bookingReports = await BookingReport.countDocuments({
+            booking_id: { $in: bookingIds }
+        });
+
+        const totalReports = stationReports + chargerReports + bookingReports;
+
+        // Get recent bookings count (last 30 days)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const recentBookings = await Booking2.countDocuments({
+            charging_station_id: stationId,
+            createdAt: { $gte: thirtyDaysAgo }
+        });
+
+        const chargerStats = {
+            total: station.chargers?.length || 0,
+            available: 0,
+            unavailable: 0,
+            disabled: 0,
+            byPowerType: { AC: 0, DC: 0 }
+        };
+
+        const processedChargers = station.chargers?.map(charger => {
+            const availableConnectors = charger.connector_types?.filter(
+                connector => connector.status === 'available'
+            ).length || 0;
+
+            const totalConnectors = charger.connector_types?.length || 0;
+
+            if (charger.charger_status === 'open') {
+                chargerStats.available++;
+            } else if (charger.charger_status === 'unavailable') {
+                chargerStats.unavailable++;
+            } else if (charger.charger_status === 'disabled_by_SO') {
+                chargerStats.disabled++;
+            }
+
+            if (charger.power_type === 'AC') {
+                chargerStats.byPowerType.AC++;
+            } else if (charger.power_type === 'DC') {
+                chargerStats.byPowerType.DC++;
+            }
+
+            return {
+                ...charger,
+                available_connectors: availableConnectors,
+                total_connectors: totalConnectors,
+                connector_details: charger.connector_types?.map(connector => ({
+                    ...connector,
+                    connector_name: connector.connector?.type_name || 'Unknown',
+                    current_type: connector.connector?.current_type || 'Unknown',
+                    image: connector.connector?.image || null
+                })) || []
+            };
+        }) || [];
+
+        const averageRating = station.ratings?.length > 0
+            ? station.ratings.reduce((sum, rating) => sum + rating.stars, 0) / station.ratings.length
+            : 0;
+
+        const response = {
+            station: {
+                ...station,
+                district_name: station.district?.name || 'Unknown District',
+                owner_name: station.station_owner_id?.name || 'Unknown Owner',
+                owner_email: station.station_owner_id?.email || '',
+                owner_contact: station.station_owner_id?.contact_number || ''
+            },
+            statistics: {
+                total_reports: totalReports,
+                station_reports: stationReports,
+                charger_reports: chargerReports,
+                booking_reports: bookingReports,
+                recent_bookings: recentBookings,
+                total_ratings: station.ratings?.length || 0,
+                average_rating: averageRating.toFixed(1),
+                charger_stats: chargerStats
+            },
+            chargers: processedChargers
+        };
+
+        res.status(200).json({
+            success: true,
+            data: response
+        });
+    }
+    catch (error) {
+        console.error('Error fetching station details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+
+
+const getStationsForMap = asyncHandler(async (req, res) => {
+  try {
+    const stations = await PartneredChargingStation.find({
+      latitude: { $exists: true, $ne: null },
+      longitude: { $exists: true, $ne: null }
+    })
+      .populate('district', 'name')
+      .populate('station_owner_id', 'name email contact_number')
+      .select('_id station_name latitude longitude address city');
 
     res.status(200).json({
       success: true,
-      data: formattedStations
+      data: stations
     });
   } catch (error) {
-    console.error('Error fetching owner stations:', error);
+    console.error('Error fetching stations for map:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching stations',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Server error while fetching stations',
+      error: error.message
     });
   }
 });
+
 
 module.exports = {
     checkStationsExist,
@@ -654,9 +1593,17 @@ module.exports = {
     getRequestedStations,
     deleteStation,
     updateStation,
+    updateStationSchedule,
     getStationForEdit,
     getStationDetails,
     toggleFavoriteStation,
     getFavoriteStations,
     getOwnerStations,
+    getStationById,
+    getStationChargers,
+    updateCharger,
+    addChargerToStation,
+    getAllStationsForSupportOfficer,
+    getStationDetailsForSupportOfficer,
+    getStationsForMap
 }
