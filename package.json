@@ -32,7 +32,6 @@
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
     "nodemailer": "^7.0.9",
-    "react-dayjs": "^0.3.2",
     "twilio": "^5.7.1",
     "uuid": "^11.1.0"
   },
