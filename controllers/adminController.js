@@ -1,6 +1,11 @@
 const asyncHandler = require('express-async-handler');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
 const StationOwner = require('../models/stationOwnerModel');
+const EvOwner = require('../models/evOwnerModel');
+const ChargingSession = require('../models/chargingSessionModel');
+const Booking = require('../models/bookingModel');
+
+const mongoose = require('mongoose');
 
 const getAdminRequests = asyncHandler(async (req, res) => {
     try {
@@ -552,8 +557,118 @@ const updateRequestStatus = asyncHandler(async (req, res) => {
     }
 });
 
+// Get Admin Users Table Data
+const getAdminUsersTableData = asyncHandler(async (req, res) => {
+    // Admin ID check (for authorization only, filtering is not based on adminId)
+    const adminId = req.query.adminId || req.user?._id;
+
+    if (!adminId) {
+        return res.status(401).json({ success: false, message: 'Authorization required.' });
+    }
+
+    try {
+        const results = await EvOwner.aggregate([
+            // 1. Lookup related Charging Sessions (completed sessions are usually relevant for stats)
+            {
+                $lookup: {
+                    from: 'chargingsessions', // Assuming collection name is 'chargingsessions'
+                    localField: '_id',
+                    foreignField: 'ev_owner_id',
+                    as: 'sessions'
+                }
+            },
+            
+            // 2. Lookup related Bookings
+            {
+                $lookup: {
+                    from: 'bookings', // Assuming collection name is 'bookings'
+                    localField: '_id',
+                    foreignField: 'ev_user_id',
+                    as: 'bookings'
+                }
+            },
+
+            // 3. Final Projection and Calculation
+            {
+                $project: {
+                    id: '$_id',
+                    Name: '$name',
+                    Email: '$email',
+                    'Contact Number': '$contact_number',
+                    'Date of Registration': '$createdAt',
+                    
+                    // Vehicle Count (Size of the embedded array)
+                    'No of Vehicles Registered': { $size: { $ifNull: ['$vehicles', []] } },
+
+                    // Calculate Total Energy Charged (Sum energy_delivered from completed sessions)
+                    'Total Energy Charged': {
+                        $sum: {
+                            $map: {
+                                input: '$sessions',
+                                as: 's',
+                                in: {
+                                    $cond: [
+                                        { $eq: ['$$s.status', 'completed'] },
+                                        { $ifNull: ['$$s.energy_delivered', 0] },
+                                        0
+                                    ]
+                                }
+                            }
+                        }
+                    },
+
+                    // Calculate Total Spend (Sum total_cost from completed/paid sessions)
+                    'Total Spend': {
+                        $sum: {
+                            $map: {
+                                input: '$sessions',
+                                as: 's',
+                                in: {
+                                    $cond: [
+                                        { $eq: ['$$s.payment_status', 'completed'] },
+                                        { $ifNull: ['$$s.total_cost', 0] },
+                                        0
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    
+                    // Calculate Session and Booking Counts
+                    'Total Charging Sessions': { $size: '$sessions' },
+                    'No of Bookings': { $size: '$bookings' },
+                }
+            }
+        ]);
+
+        // 4. Post-process (JavaScript layer) for formatting
+        const finalData = results.map(user => ({
+            ...user,
+            'Date of Registration': new Date(user['Date of Registration']).toLocaleDateString(),
+            'Total Energy Charged': `${(user['Total Energy Charged'] || 0).toFixed(2)} kWh`,
+            'Total Spend': `LKR ${(user['Total Spend'] || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+            'Total Charging Sessions': user['Total Charging Sessions'] || 0,
+            'No of Bookings': user['No of Bookings'] || 0,
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: finalData
+        });
+
+    } catch (error) {
+        console.error('Error fetching user list for Admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching user list.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     getAdminRequests,
     getRequestDetails,
-    updateRequestStatus
+    updateRequestStatus,
+    getAdminUsersTableData
 }
