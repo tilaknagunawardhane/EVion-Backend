@@ -865,10 +865,16 @@ const saveReportAction = asyncHandler(async (req, res) => {
         }
 
         // Fetch existing report early so we can validate and use its booking data for refunds
-        const existingReport = await reportModel.findById(id).populate({
-            path: 'booking_id',
-            populate: [{ path: 'ev_user_id' }]
-        });
+        // Only attempt to populate booking_id when the report type is 'bookings' because
+        // other report models (stations, chargers) don't define booking_id in their schema.
+        let existingReportQuery = reportModel.findById(id);
+        if (type === 'bookings') {
+            existingReportQuery = existingReportQuery.populate({
+                path: 'booking_id',
+                populate: [{ path: 'ev_user_id' }]
+            });
+        }
+        const existingReport = await existingReportQuery;
         if (!existingReport) {
             return res.status(404).json({
                 success: false,

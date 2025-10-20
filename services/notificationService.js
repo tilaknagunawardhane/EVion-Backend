@@ -16,7 +16,11 @@ const createNotification = async (notificationData) => {
 
 const getUserNotifications = async (userId, userModel, page = 1, limit = 20, unreadOnly = false) => {
   try {
-    // console.log("recipient details: ", userId, userModel)
+    // Validate recipient ID early to avoid passing invalid values to mongoose
+    if (!userId || userId === 'null') {
+      console.warn('getUserNotifications called with invalid userId:', userId);
+      return { notifications: [], pagination: { currentPage: parseInt(page), totalPages: 0, totalNotifications: 0 } };
+    }
 
     const query = {
       recipientId: userId,
@@ -79,14 +83,17 @@ const markAllAsRead = async (userId, userModel) => {
 
 const getUnreadCount = async (userId, userModel) => {
   try {
-    // console.log("recipient details: ", userId, userModel)
+    // Validate recipient ID to avoid CastError when userId is null or invalid
+    if (!userId || userId === 'null') {
+      console.warn('getUnreadCount called with invalid userId:', userId);
+      return 0;
+    }
+
     const count = await Notification.countDocuments({
       recipientId: userId,
       recipientModel: userModel,
       isRead: false
     });
-
-
 
     return count;
   } catch (error) {

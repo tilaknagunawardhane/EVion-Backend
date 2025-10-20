@@ -11,6 +11,7 @@ const { checkStationsExist, createStation, getRequestedStations, deleteStation, 
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer,
     getStationsForMap,
+    getAllStationsForAdminDash
     
 } = require('../controllers/partneredChargingStationController');
 
@@ -41,5 +42,6 @@ router.get('/map/stations', getStationsForMap);
 router.get('/:stationId/temporary-closure', getTemporaryClosures);
 router.post('/:stationId/create-temporary-closure', createTemporaryClosure);
 router.put('/:stationId/remove-temporary-closure/:closureId', cancelTemporaryClosure);
+router.get('/all-stations', getAllStationsForAdminDash);
 
 module.exports = router;
