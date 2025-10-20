@@ -11,10 +11,13 @@ const SupportOfficer = require('../models/supportOfficerModel')
 const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 const Booking2 = require('../models/bookingModel')
 const Booking = require('../models/bookingModel');
+const ChargingSession = require('../models/chargingSessionModel');
 
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
+
+const mongoose = require('mongoose');
 
 const defaultSchedule = {
     monday:    { open24Hours: true, closed: false, timeBlocks: [] },
@@ -1587,6 +1590,311 @@ const getStationsForMap = asyncHandler(async (req, res) => {
 });
 
 
+// Admin
+// Get all stations for admin's table
+const getAllStationsForAdmin = asyncHandler(async (req, res) => {
+    // Note: Admin ID is used for authorization but not strictly for filtering stations (fetches all)
+    const adminId = req.query.adminId || req.user?._id; 
+    
+    // List of connector type IDs to count (You should fetch these IDs once from the DB if they are dynamic)
+    // NOTE: Replace these placeholder IDs with the actual ObjectIds for Type1, Type2, etc.
+    const CONNECTOR_ID_MAP = {
+        'Type1': '686c5b47bfe4bb27f3d50c95', 
+        'Type2': '686c596bbfe4bb27f3d50c93', 
+        'CCS1': '686c5be4bfe4bb27f3d50c96',
+        'CCS2': '686c5adcbfe4bb27f3d50c94', 
+        'CHAdeMO': '686c5d47bfe4bb27f3d50c97', 
+        'Tesla': '686c5dbbbfe4bb27f3d50c98',
+    };
+
+    try {
+        // --- Aggregation Pipeline ---
+        const results = await PartneredChargingStation.aggregate([
+            // 1. Initial Lookups for Owner and District
+            {
+                $lookup: {
+                    from: 'stationowners',
+                    localField: 'station_owner_id',
+                    foreignField: '_id',
+                    as: 'ownerInfo'
+                }
+            },
+            { $unwind: { path: '$ownerInfo', preserveNullAndEmptyArrays: true } },
+            
+            // 🟢 FIX 1: District Lookup (Assuming collection name is 'districts')
+            {
+                $lookup: {
+                    from: 'districts', // CRITICAL: Ensure this collection name is correct (Mongoose usually plurals district -> districts)
+                    localField: 'district',
+                    foreignField: '_id',
+                    as: 'districtInfo'
+                }
+            },
+            { $unwind: { path: '$districtInfo', preserveNullAndEmptyArrays: true } },
+
+            // 2. Lookup Sessions and Reports (for Revenue and Active Reports)
+            {
+                $lookup: {
+                    from: 'chargingsessions',
+                    localField: '_id',
+                    foreignField: 'station_id',
+                    as: 'sessions'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'stationreports',
+                    localField: '_id',
+                    foreignField: 'station_id',
+                    as: 'reports'
+                }
+            },
+
+            // 3. Unwind Chargers and Connectors for Counting
+            // Deconstruct the chargers array (needed to access nested connector counts)
+            { $unwind: { path: '$chargers', preserveNullAndEmptyArrays: true } },
+            
+            // Deconstruct the connector_types array inside the chargers subdocument
+            { $unwind: { path: '$chargers.connector_types', preserveNullAndEmptyArrays: true } },
+
+            // 4. Group back by station (_id) and perform final calculations
+            {
+                $group: {
+                    _id: '$_id', // Group back to the station level
+                    
+                    // Base fields (use $first to pick the value once)
+                    'Station Name': { $first: '$station_name' },
+                    'Owner Name': { $first: '$ownerInfo.name' },
+                    'Joined On': { $first: '$createdAt' },
+                    'District': { $first: '$districtInfo.name' },
+                    'City': { $first: '$city' },
+                    'Address Line': { $first: '$address' },
+                    'Station Status': { $first: '$station_status' },
+                    'Unique Charger IDs': { $addToSet: '$chargers._id' },
+                    'Total Connector Count': { $sum: 1 }, // Count the total number of unwound connectors
+                    
+                    // Revenue Calculation (Sum total_cost from all sessions)
+                    'Total Revenue': {
+                        $sum: {
+                            $sum: {
+                                $map: {
+                                    input: '$sessions',
+                                    as: 'session',
+                                    in: {
+                                        $cond: [
+                                            { $eq: ['$$session.payment_status', 'completed'] },
+                                            { $ifNull: ['$$session.total_cost', 0] },
+                                            0
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    
+                    // Active Reports Count (Calculate size of reports array)
+                    'No of Active Reports': { 
+                        $first: {
+                            $size: {
+                                $filter: {
+                                    input: '$reports',
+                                    as: 'report',
+                                    cond: { $eq: ['$$report.status', 'under-review'] }
+                                }
+                            }
+                        }
+                    },
+                    
+                    // 🟢 FIX 2: Count Connectors by Type ID
+                    'Type1': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Type1)] }, 1, 0] } },
+                    'Type2': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Type2)] }, 1, 0] } },
+                    'CCS1': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CCS1)] }, 1, 0] } },
+                    'CCS2': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CCS2)] }, 1, 0] } },
+                    'CHAdeMO': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CHAdeMO)] }, 1, 0] } },
+                    'Tesla': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Tesla)] }, 1, 0] } },
+                }
+            },
+            
+            // 5. Final Projection to clean up and match frontend table structure
+            {
+                $project: {
+                    id: '$_id',
+                    'Station Name': 1,
+                    'Owner Name': 1,
+                    'Joined On': 1,
+                    'District': 1,
+                    'City': 1,
+                    'Address Line': 1,
+                    'Revenue': '$Total Revenue',
+                    'No of Chargers': { $size: '$Unique Charger IDs' },
+                    'No of Active Reports': 1,
+                    'Station Status': 1,
+                    'Type1': 1,
+                    'Type2': 1,
+                    'CCS1': 1,
+                    'CCS2': 1,
+                    'CHAdeMO': 1,
+                    'Tesla': 1,
+                    'Total Connectors': '$Total Connector Count'
+                }
+            }
+        ]);
+
+        // 6. Post-process (JavaScript layer) for formatting
+        const finalData = results.map(station => {
+            const totalRevenueFormatted = `LKR ${station.Revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+            return {
+                ...station,
+                'Joined On': new Date(station['Joined On']).toLocaleDateString(),
+                'Revenue': totalRevenueFormatted,
+                'Station Status': station['Station Status'].charAt(0).toUpperCase() + station['Station Status'].slice(1),
+                'No of Chargers': station['No of Chargers'] || 0,
+                // The TypeX fields are now correct counts
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: finalData
+        });
+
+    } catch (error) {
+        console.error('Error fetching stations for Admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching station list.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get request summary counts for Station Right Panel
+const getRequestSummaryCountsRightPanel = asyncHandler(async (req, res) => {
+    // Note: Admin ID is used for authorization but not strictly for filtering data (fetches all)
+    const adminId = req.query.adminId || req.user?._id; 
+    
+    // Define the statuses that constitute an 'Under Review' station
+    const UNDER_REVIEW_STATUSES = ['processing', 'to_be_installed', 'rejected'];
+
+    // Define the statuses that constitute a 'New Charger Request'
+    const NEW_REQUEST_STATUSES = ['processing', 'to_be_installed'];
+
+    try {
+        const results = await PartneredChargingStation.aggregate([
+            // 1. Unwind chargers to calculate individual charger and station review status
+            { $unwind: { path: '$chargers', preserveNullAndEmptyArrays: true } },
+
+            // 2. Group all documents into a single summary document
+            {
+                $group: {
+                    _id: null, // Group all documents together
+
+                    // Total number of Stations (unique parents)
+                    totalStations: { $addToSet: '$_id' },
+
+                    // Total number of Chargers across ALL stations
+                    totalChargers: { $sum: 1 }, 
+                    
+                    // Total New Charger Requests
+                    totalNewChargerRequests: {
+                        $sum: {
+                            $cond: [
+                                { $in: ['$chargers.charger_status', NEW_REQUEST_STATUSES] }, 
+                                1, 
+                                0
+                            ]
+                        }
+                    },
+
+                    // Identify if the station is NOT completely under review
+                    // (We use $min to identify if AT LEAST ONE charger is NOT under review)
+                    isOperational: { 
+                        $min: {
+                            $cond: [
+                                // Check if charger status is an operational/active state
+                                { $in: ['$chargers.charger_status', ['open', 'unavailable', 'disabled_by_SO', 'deleted']] },
+                                1, // Operational status found
+                                0  // Restricted status found
+                            ]
+                        }
+                    }
+                }
+            },
+
+            // 3. Project the final counts
+            {
+                $project: {
+                    _id: 0,
+                    totalStations: { $size: '$totalStations' },
+                    totalChargers: '$totalChargers',
+                    totalNewChargerRequests: '$totalNewChargerRequests',
+                    
+                    // CRITICAL: Calculate Stations Under Review based on the inverse of the operational check.
+                    // This requires a second, separate aggregation (see below).
+                }
+            }
+        ]);
+        
+        // --- SECOND STAGE: Calculate Stations Under Review (Requires separate query) ---
+        // Finding stations where *EVERY* charger is in a restricted status is complex to do in the same pipeline.
+        // It's more reliable to check the condition separately, or use $filter.
+
+        const restrictedStations = await PartneredChargingStation.aggregate([
+            {
+                $addFields: {
+                    // Check if ALL chargers are in a restricted status
+                    allChargersRestricted: {
+                        $allElementsTrue: {
+                            $map: {
+                                input: '$chargers',
+                                as: 'charger',
+                                in: {
+                                    $in: ['$$charger.charger_status', UNDER_REVIEW_STATUSES]
+                                }
+                            }
+                        }
+                    },
+                    // Ensure the station actually has chargers (not empty array)
+                    hasChargers: { $gt: [{ $size: '$chargers' }, 0] }
+                }
+            },
+            {
+                // Filter for stations that are restricted AND have chargers
+                $match: {
+                    allChargersRestricted: true,
+                    hasChargers: true
+                }
+            },
+            {
+                $count: 'count'
+            }
+        ]);
+
+        const summary = results[0] || {};
+
+        const responseData = {
+            totalStations: summary.totalStations || 0,
+            totalChargers: summary.totalChargers || 0,
+            totalNewChargerRequests: summary.totalNewChargerRequests || 0,
+            stationsUnderReview: restrictedStations[0]?.count || 0
+        };
+
+        res.status(200).json({
+            success: true,
+            data: responseData
+        });
+
+    } catch (error) {
+        console.error('Error fetching admin summary data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching admin summary data.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -1605,5 +1913,8 @@ module.exports = {
     addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer,
-    getStationsForMap
+    getStationsForMap,
+
+    getAllStationsForAdmin,
+    getRequestSummaryCountsRightPanel
 }

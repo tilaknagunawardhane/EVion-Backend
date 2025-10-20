@@ -1,6 +1,8 @@
 // controllers/chargingSessionController.js
 const ChargingSession = require('../models/chargingSessionModel');
-
+const WalletService = require('../services/walletService');
+const StationOwner = require('../models/stationOwnerModel');
+const PartneredChargingStation = require('../models/partneredChargingStationModel');
 /**
  * Create a new charging session in the DB
  */
@@ -29,6 +31,56 @@ exports.createSession = async ({ booking_id, ev_owner_id, station_id, charger_id
  */
 exports.completeSession = async (sessionId, { energy_delivered, total_cost }) => {
   try {
+    // Find the charging session with populated data
+    const chargingSession = await ChargingSession.findById(sessionId)
+      .populate('station_id')
+      .populate('booking_id');
+
+    if (!chargingSession) {
+      throw new Error('Charging session not found');
+    }
+
+    const evOwnerId = chargingSession.ev_owner_id;
+    const stationId = chargingSession.station_id._id;
+    
+    // Get the station owner ID directly from the station document
+    const station = await PartneredChargingStation.findById(stationId);
+    if (!station) {
+      throw new Error('Station not found');
+    }
+    
+    const stationOwnerId = station.station_owner_id;
+    
+    // Verify station owner exists
+    const stationOwner = await StationOwner.findById(stationOwnerId);
+    if (!stationOwner) {
+      throw new Error('Station owner not found');
+    }
+
+    // Get booking ID if exists
+    const bookingId = chargingSession.booking_id?._id || null;
+
+    console.log('Processing charging payment:', {
+      sessionId,
+      evOwnerId,
+      stationId: stationId.toString(),
+      stationOwnerId: stationOwnerId.toString(),
+      bookingId: bookingId?.toString(),
+      total_cost,
+      energy_delivered
+    });
+
+    // Charge the EV owner for the charging session
+    await WalletService.chargeForCharging(
+      evOwnerId,
+      sessionId,
+      total_cost,
+      stationId,
+      stationOwnerId,
+      bookingId
+    );
+
+    // Update the charging session with completion details
     await ChargingSession.findByIdAndUpdate(sessionId, {
       end_time: new Date(),
       energy_delivered,
@@ -36,8 +88,11 @@ exports.completeSession = async (sessionId, { energy_delivered, total_cost }) =>
       payment_status: 'completed',
       status: 'completed'
     });
+
+    console.log('✅ Charging session completed and payment processed successfully');
+
   } catch (err) {
-    console.error('❌ Error updating charging session:', err);
+    console.error('❌ Error completing charging session:', err);
     throw err;
   }
 };

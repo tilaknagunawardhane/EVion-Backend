@@ -2,17 +2,29 @@ const express = require('express');
 const PayoutService = require('../services/payoutService');
 const router = express.Router();
 const PayoutBatch = require('../models/payoutBatchModel');
+
 const {
     getAdminRequests,
     getRequestDetails,
-    updateRequestStatus
+    updateRequestStatus,
+    getAdminUsersTableData
 } = require('../controllers/adminController');
+
+const {
+    getAllStationsForAdmin,
+    getRequestSummaryCountsRightPanel
+} = require('../controllers/partneredChargingStationController');
+
 const { adminLogin } = require('../controllers/authController');
 const path = require('path');
 
 router.get('/get-requests', getAdminRequests);
 router.get('/request-details/:id', getRequestDetails);
 router.put('/update-request-status/:id', updateRequestStatus);
+
+router.get('/stations', getAllStationsForAdmin);
+router.get('/summary-counts', getRequestSummaryCountsRightPanel);
+router.get('/users/all', getAdminUsersTableData);
 
 // Payout routes
 const uploadPaymentProof = (req, res, next) => {
@@ -205,5 +217,17 @@ router.get('/payouts/stats', async (req, res) => {
     }
 });
 
+// Cancel payout batch
+router.post('/payouts/batch/:batch_id/cancel/:adminId', async (req, res) => {
+    try {
+        const batch = await PayoutService.cancelPayoutBatch(
+            req.params.batch_id,
+            req.params.adminId
+        );
+        res.json({ success: true, batch });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 module.exports = router;
