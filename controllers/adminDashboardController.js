@@ -38,11 +38,9 @@ const getAdminDashboardStats = async (req, res) => {
 
         stationsWithChargers.forEach(station => {
             if (station.chargers && Array.isArray(station.chargers)) {
-                // Count all chargers in the station's chargers array
                 const stationChargerCount = station.chargers.length;
                 totalChargers += stationChargerCount;
                 
-                // Count faulted and pending chargers
                 station.chargers.forEach(charger => {
                     if (['unavailable', 'disabled_by_SO'].includes(charger.charger_status)) {
                         faultedChargers++;
@@ -326,11 +324,77 @@ const getAdminDashboardStats = async (req, res) => {
         ]);
         console.log('✅ Session trends data points:', sessionTrends.length);
 
+        // ====== DAILY REVENUE TRENDS (Last 30 days) ======
+        console.log('\n📊 Step 13: Calculating Daily Revenue Trends...');
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+        console.log('📅 Thirty days ago:', thirtyDaysAgo.toISOString());
+
+        const dailyRevenueTrends = await Transaction.aggregate([
+            {
+                $match: {
+                    status: 'completed',
+                    type: { $in: ['booking_charge', 'charging_charge'] },
+                    createdAt: { $gte: thirtyDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' },
+                        type: '$type'
+                    },
+                    totalRevenue: { $sum: '$amount' }
+                }
+            },
+            {
+                $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 }
+            }
+        ]);
+        console.log('✅ Daily revenue trends data points:', dailyRevenueTrends.length);
+
+        // Create a map for all 30 days with zero values
+        const dailyRevenueByDate = {};
+        for (let i = 0; i < 30; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - (29 - i));
+            date.setHours(0, 0, 0, 0);
+            
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            dailyRevenueByDate[key] = {
+                date: key,
+                year: date.getFullYear(),
+                month: date.getMonth() + 1,
+                day: date.getDate(),
+                bookingRevenue: 0,
+                chargingRevenue: 0,
+                totalRevenue: 0
+            };
+        }
+
+        // Fill in actual revenue data
+        dailyRevenueTrends.forEach(item => {
+            const key = `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${String(item._id.day).padStart(2, '0')}`;
+            
+            if (dailyRevenueByDate[key]) {
+                if (item._id.type === 'booking_charge') {
+                    dailyRevenueByDate[key].bookingRevenue = Math.round(item.totalRevenue);
+                } else if (item._id.type === 'charging_charge') {
+                    dailyRevenueByDate[key].chargingRevenue = Math.round(item.totalRevenue);
+                }
+                dailyRevenueByDate[key].totalRevenue += Math.round(item.totalRevenue);
+            }
+        });
+        console.log('✅ Daily revenue by date processed:', Object.keys(dailyRevenueByDate).length, 'days');
+
         // ====== APPROVALS ======
         const accountReactivations = 0;
 
         // ====== PREPARE RESPONSE ======
-        console.log('\n📦 Step 13: Preparing Response Data...');
+        console.log('\n📦 Step 14: Preparing Response Data...');
         const responseData = {
             success: true,
             data: {
@@ -367,6 +431,7 @@ const getAdminDashboardStats = async (req, res) => {
                 },
                 userGrowth: userGrowthWithActive,
                 revenueTrends: Object.values(revenueByMonth),
+                dailyRevenueTrends: Object.values(dailyRevenueByDate),
                 sessionTrends: sessionTrends.map(item => ({
                     month: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
                     totalSessions: item.totalSessions,
@@ -388,6 +453,19 @@ const getAdminDashboardStats = async (req, res) => {
                         total: totalSessions,
                         active: activeSessions
                     }
+                },
+                revenueBreakdown: {
+                    total: Math.round(totalRevenue),
+                    charging: Math.round(totalChargingFees),
+                    booking: Math.round(totalBookingFees),
+                    percentages: {
+                        charging: totalRevenue > 0 
+                            ? ((totalChargingFees / totalRevenue) * 100).toFixed(1) 
+                            : 0,
+                        booking: totalRevenue > 0 
+                            ? ((totalBookingFees / totalRevenue) * 100).toFixed(1) 
+                            : 0
+                    }
                 }
             }
         };
@@ -399,9 +477,10 @@ const getAdminDashboardStats = async (req, res) => {
         console.log('   - Revenue:', responseData.data.stats.revenue);
         console.log('   - User Growth Points:', responseData.data.userGrowth.length);
         console.log('   - Revenue Trends Points:', responseData.data.revenueTrends.length);
+        console.log('   - Daily Revenue Points:', responseData.data.dailyRevenueTrends.length);
         console.log('   - Session Trends Points:', responseData.data.sessionTrends.length);
 
-        console.log('\n📤 Step 14: Sending Response...');
+        console.log('\n📤 Step 15: Sending Response...');
         res.setHeader('Content-Type', 'application/json');
         
         console.log('✅ Response status: 200');
