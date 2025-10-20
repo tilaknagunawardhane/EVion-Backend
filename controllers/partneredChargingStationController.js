@@ -2385,6 +2385,53 @@ const getRequestSummaryCountsRightPanel = asyncHandler(async (req, res) => {
     }
 });
 
+// Get all stations for admin dashboard
+const getAllStationsForAdminDash = asyncHandler(async (req, res) => {
+    try {
+        const stations = await PartneredChargingStation.find({})
+            .populate('district', 'name')
+            .select('station_name address city district location station_status chargers')
+            .lean();
+
+        const formattedStations = stations.map(station => {
+            // Calculate display status similar to getStationById
+            const isNewStation = station.chargers.every(c =>
+                ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+            );
+            
+            let displayStatus = station.station_status;
+            if (isNewStation && station.station_status === 'unavailable') {
+                displayStatus = 'reviewing';
+            } else if (!isNewStation && station.station_status === 'unavailable') {
+                displayStatus = 'closed';
+            }
+
+            return {
+                _id: station._id.toString(),
+                station_name: station.station_name,
+                address: station.address,
+                city: station.city,
+                district: station.district?.name,
+                location: station.location,
+                status: displayStatus.toLowerCase(),
+                chargers: station.chargers || []
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: formattedStations
+        });
+    } catch (error) {
+        console.error('Error fetching all stations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -2411,5 +2458,6 @@ module.exports = {
     getStationEarningsForAdmin,
     getStationReportsForAdmin,
     updateStationStatus,
-    getStationAnalytics
+    getStationAnalytics,
+    getAllStationsForAdminDash
 }
