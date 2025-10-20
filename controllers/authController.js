@@ -290,6 +290,18 @@ const registerStationOwner = async (req, res) => {
 };
 
 // authController.js
+const jwt = require('jsonwebtoken');
+
+// Add this function
+const verifyToken = (token) => {
+    return new Promise((resolve, reject) => {
+        jwt.verify(token, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
+            if (err) reject(err);
+            else resolve(decoded);
+        });
+    });
+};
+
 exports.refreshToken = async (req, res) => {
     try {
         const { refreshToken } = req.body;

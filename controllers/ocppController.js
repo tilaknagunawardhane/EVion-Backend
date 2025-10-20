@@ -1,10 +1,75 @@
 // controllers/ocppController.js
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
+const Booking = require('../models/bookingModel');
 const chargingSessionController = require('./chargingSessionController');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // In-memory states
 let activeSessions = {}; // connectorId -> session info
 let chargerLocks = {};   // chargerId -> ev_owner_id (when connected)
+
+// ------------------------------------------------------------------
+// 🔍 HELPER: Check for conflicting bookings
+async function checkBookingConflict(connectorId, ev_owner_id, chargerId) {
+  try {
+    // Get current time in IST
+    const nowIST = dayjs().tz('Asia/Kolkata');
+    const todayMidnightIST = nowIST.startOf('day');
+    
+    console.log(`🔍 Checking bookings for connector ${connectorId} at ${nowIST.format()}`);
+
+    // Find all bookings from today onwards for this connector
+    const bookings = await Booking.find({
+      connector_type_id: connectorId,
+      charger_id: chargerId,
+      booking_date: { $gte: todayMidnightIST.toDate() },
+      status: 'upcoming'
+    });
+
+    if (bookings.length === 0) {
+      console.log('✅ No bookings found - connection allowed');
+      return { allowed: true };
+    }
+
+    // Check if current time falls within any booking slot
+    for (const booking of bookings) {
+      const bookingStart = dayjs(booking.start_time);
+      const bookingEnd = dayjs(booking.end_time);
+      
+      // Check if current time is within this booking slot
+      if (nowIST.isAfter(bookingStart) && nowIST.isBefore(bookingEnd)) {
+        // There's an active booking slot right now
+        if (booking.ev_user_id.toString() === ev_owner_id) {
+          console.log('✅ Booking found for same user - connection allowed');
+          return { 
+            allowed: true, 
+            booking_id: booking._id,
+            message: 'Connected with your booking'
+          };
+        } else {
+          console.log('❌ Booking exists for different user - connection denied');
+          return { 
+            allowed: false, 
+            message: `This connector is booked by another user from ${bookingStart.format('h:mm A')} to ${bookingEnd.format('h:mm A')}`
+          };
+        }
+      }
+    }
+
+    // Current time doesn't fall in any booking slot - allow connection
+    console.log('✅ No conflicting booking at current time - connection allowed');
+    return { allowed: true };
+
+  } catch (error) {
+    console.error('❌ Error checking booking conflict:', error);
+    throw error;
+  }
+}
 
 // ------------------------------------------------------------------
 // 🔌 CONNECT CHARGER
@@ -43,15 +108,25 @@ exports.connectCharger = async (req, res) => {
       }
     }
 
+    // 📅 Check for booking conflicts
+    const bookingCheck = await checkBookingConflict(connectorId, ev_owner_id, chargerId);
+    
+    if (!bookingCheck.allowed) {
+      return res.status(403).json({ 
+        error: bookingCheck.message || "This connector is currently booked by another user."
+      });
+    }
+
     // ✅ Lock the charger for this user
     chargerLocks[chargerId] = ev_owner_id;
 
     console.log(`🔌 Charger ${chargerId} connected by user ${ev_owner_id}`);
 
     res.json({
-      message: "Charger connected successfully. You can now start charging.",
+      message: bookingCheck.message || "Charger connected successfully. You can now start charging.",
       chargerId,
-      stationId: station._id
+      stationId: station._id,
+      booking_id: bookingCheck.booking_id || null
     });
   } catch (err) {
     console.error("❌ connectCharger error:", err);
