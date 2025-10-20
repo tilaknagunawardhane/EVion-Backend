@@ -3,6 +3,7 @@ const ChargingSession = require('../models/chargingSessionModel');
 const WalletService = require('../services/walletService');
 const StationOwner = require('../models/stationOwnerModel');
 const PartneredChargingStation = require('../models/partneredChargingStationModel');
+const Booking = require('../models/bookingModel');
 /**
  * Create a new charging session in the DB
  */
@@ -88,6 +89,27 @@ exports.completeSession = async (sessionId, { energy_delivered, total_cost }) =>
       payment_status: 'completed',
       status: 'completed'
     });
+
+    // Update booking status to 'completed' if this session was associated with a booking
+    if (bookingId) {
+      const booking = await Booking.findById(bookingId);
+      if (booking) {
+        // Only update if booking is still in 'upcoming' status (not cancelled)
+        if (booking.status === 'upcoming') {
+          await Booking.findByIdAndUpdate(bookingId, {
+            status: 'completed',
+            // You can also add completion timestamp if needed
+            completed_at: new Date()
+          });
+        } else {
+          console.log(`ℹ️  Booking ${bookingId} not updated - current status: ${booking.status}`);
+        }
+      } else {
+        console.log(`⚠️  Booking ${bookingId} not found`);
+      }
+    } else {
+      console.log('ℹ️  No booking associated with this charging session');
+    }
 
     console.log('✅ Charging session completed and payment processed successfully');
 
