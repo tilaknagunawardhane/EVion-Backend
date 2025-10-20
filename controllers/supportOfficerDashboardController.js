@@ -53,6 +53,61 @@ const getSupportOfficerDashboardStats = async (req, res) => {
         ]);
         console.log('✅ Reports by category:', reportsByCategory);
 
+        // Reports by charger (with station and charger names)
+        console.log('\n📊 Step 2.5: Fetching Reports by Charger...');
+        const reportsByCharger = await StationReport.aggregate([
+            {
+                $group: {
+                    _id: {
+                        station_id: '$station_id',
+                        charger_id: '$charger_id'
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $sort: { count: -1 }
+            },
+            {
+                $limit: 10
+            }
+        ]);
+
+        // Populate station and charger names
+        const reportsWithNames = await Promise.all(
+            reportsByCharger.map(async (report) => {
+                try {
+                    const station = await PartneredChargingStation.findById(report._id.station_id);
+                    if (!station) {
+                        return {
+                            stationName: 'Unknown Station',
+                            chargerName: 'Unknown Charger',
+                            reportCount: report.count
+                        };
+                    }
+
+                    const charger = station.chargers.id(report._id.charger_id);
+                    const chargerName = charger ? charger.charger_name : 'Unknown Charger';
+
+                    return {
+                        stationName: station.station_name,
+                        chargerName: chargerName,
+                        displayName: `${station.station_name} - ${chargerName}`,
+                        reportCount: report.count
+                    };
+                } catch (error) {
+                    console.error('Error fetching station/charger details:', error);
+                    return {
+                        stationName: 'Unknown Station',
+                        chargerName: 'Unknown Charger',
+                        displayName: 'Unknown',
+                        reportCount: report.count
+                    };
+                }
+            })
+        );
+        console.log('✅ Reports by charger with names:', reportsWithNames);
+
         // ====== DISCUSSIONS ======
         console.log('\n📊 Step 3: Fetching Discussions Data...');
         const totalDiscussions = await Discussion.countDocuments();
@@ -94,6 +149,139 @@ const getSupportOfficerDashboardStats = async (req, res) => {
             totalHarassment: 0,
             totalOther: 0
         };
+
+        // ====== DISCUSSIONS BY DAY (Last 7 days) ======
+        console.log('\n📊 Step 4.5: Calculating Discussions by Day...');
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        console.log('📅 Seven days ago:', sevenDaysAgo.toISOString());
+
+        const discussionsByDay = await Discussion.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: sevenDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' },
+                        dayOfWeek: { $dayOfWeek: '$createdAt' }
+                    },
+                    total: { $sum: 1 },
+                    flagged: {
+                        $sum: { $cond: ['$flagged_status', 1, 0] }
+                    },
+                    pinned: {
+                        $sum: { $cond: ['$isPinned', 1, 0] }
+                    }
+                }
+            },
+            {
+                $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 }
+            }
+        ]);
+        console.log('✅ Discussions by day data points:', discussionsByDay.length);
+
+        // Map day of week number to name
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        
+        // Initialize all 7 days with zero counts
+        const last7Days = [];
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dayOfWeek = date.getDay();
+            
+            last7Days.push({
+                date: date.toISOString().split('T')[0],
+                day: dayNames[dayOfWeek],
+                dayOfWeek: dayOfWeek,
+                approved: 0,
+                flagged: 0,
+                pinned: 0,
+                total: 0
+            });
+        }
+
+        // Fill in actual data from database
+        discussionsByDay.forEach(item => {
+            const date = new Date(item._id.year, item._id.month - 1, item._id.day);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            const dayIndex = last7Days.findIndex(d => d.date === dateStr);
+            if (dayIndex !== -1) {
+                last7Days[dayIndex].total = item.total;
+                last7Days[dayIndex].flagged = item.flagged;
+                last7Days[dayIndex].pinned = item.pinned;
+                last7Days[dayIndex].approved = item.total - item.flagged;
+            }
+        });
+
+        console.log('✅ Last 7 days discussion data prepared:', last7Days);
+
+        // ====== MOST ACTIVE USERS ======
+        console.log('\n📊 Step 4.6: Calculating Most Active Users...');
+        
+        // Get all discussions with their comments
+        const allDiscussions = await Discussion.find({}).select('user comments flagged_status');
+        
+        // Calculate user activity
+        const userActivityMap = {};
+        
+        allDiscussions.forEach(discussion => {
+            const username = discussion.user;
+            
+            // Initialize user if not exists
+            if (!userActivityMap[username]) {
+                userActivityMap[username] = {
+                    name: username,
+                    posts: 0,
+                    comments: 0,
+                    rejected: 0,
+                    totalActivity: 0
+                };
+            }
+            
+            // Count discussion post
+            userActivityMap[username].posts += 1;
+            
+            // Count if flagged (rejected)
+            if (discussion.flagged_status) {
+                userActivityMap[username].rejected += 1;
+            }
+            
+            // Count comments by this user
+            if (discussion.comments && Array.isArray(discussion.comments)) {
+                discussion.comments.forEach(comment => {
+                    if (comment.user === username) {
+                        userActivityMap[username].comments += 1;
+                    }
+                });
+            }
+        });
+        
+        // Calculate total activity and convert to array
+        const usersArray = Object.values(userActivityMap).map(user => ({
+            ...user,
+            totalActivity: user.posts + user.comments
+        }));
+        
+        // Sort by total activity and get top 5
+        const topUsers = usersArray
+            .sort((a, b) => b.totalActivity - a.totalActivity)
+            .slice(0, 5)
+            .map((user, index) => ({
+                name: user.name,
+                posts: user.posts + user.comments, // Total posts (discussions + comments)
+                rejected: user.rejected,
+                rank: index + 1
+            }));
+        
+        console.log('✅ Top 5 active users:', topUsers);
 
         // ====== STATIONS & CHARGERS STATUS ======
         console.log('\n📊 Step 5: Fetching Stations Status...');
@@ -138,6 +326,33 @@ const getSupportOfficerDashboardStats = async (req, res) => {
             }
         });
         console.log('✅ Chargers status - Open:', openChargers, 'Unavailable:', unavailableChargers, 'Disabled:', disabledChargers);
+
+        console.log('\n📊 Step 6.5: Counting Total Connectors...');
+
+        let totalConnectors = 0;
+        let availableConnectors = 0;
+        let unavailableConnectors = 0;
+
+        stationsWithChargers.forEach(station => {
+            if (station.chargers && Array.isArray(station.chargers)) {
+                station.chargers.forEach(charger => {
+                    if (charger.connector_types && Array.isArray(charger.connector_types)) {
+                        charger.connector_types.forEach(connector => {
+                            totalConnectors++;
+                            if (connector.status === 'available') {
+                                availableConnectors++;
+                            } else if (connector.status === 'unavailable') {
+                                unavailableConnectors++;
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        console.log('✅ Total connectors:', totalConnectors);
+        console.log('✅ Available connectors:', availableConnectors);
+        console.log('✅ Unavailable connectors:', unavailableConnectors);
 
         // ====== ACTIVE USERS ======
         console.log('\n📊 Step 7: Fetching Active Users Data...');
@@ -350,7 +565,10 @@ const getSupportOfficerDashboardStats = async (req, res) => {
                         open: openChargers,
                         unavailable: unavailableChargers,
                         disabled: disabledChargers,
-                        faulted: faultedChargers
+                        faulted: faultedChargers,
+                        totalConnectors: totalConnectors,
+                        availableConnectors: availableConnectors,
+                        unavailableConnectors: unavailableConnectors
                     }
                 },
                 metrics: {
@@ -377,19 +595,27 @@ const getSupportOfficerDashboardStats = async (req, res) => {
                         category: cat._id,
                         count: cat.count
                     })),
+                    reportsByCharger: reportsWithNames,
                     flagsBreakdown: {
                         spam: flagsData.totalSpam,
                         harassment: flagsData.totalHarassment,
                         other: flagsData.totalOther
                     }
                 },
+                topUsers: topUsers, // NEW: Most active users
                 reportsTrends: Object.values(reportsByMonth),
-                discussionTrends: discussionTrends.map(item => ({
-                    month: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
-                    totalDiscussions: item.totalDiscussions,
-                    flaggedCount: item.flaggedCount,
-                    totalComments: item.totalComments
-                })),
+                discussionTrends: {
+                    total: totalDiscussions,
+                    flagged: flaggedDiscussions,
+                    pinned: pinnedDiscussions,
+                    dailyData: last7Days,
+                    monthlyData: discussionTrends.map(item => ({
+                        month: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
+                        totalDiscussions: item.totalDiscussions,
+                        flaggedCount: item.flaggedCount,
+                        totalComments: item.totalComments
+                    }))
+                },
                 stationPerformance: stationsWithReports.map(station => ({
                     stationId: station._id,
                     totalReports: station.reportCount,
@@ -407,8 +633,10 @@ const getSupportOfficerDashboardStats = async (req, res) => {
         console.log('   - Discussions:', responseData.data.stats.discussions);
         console.log('   - Stations:', responseData.data.stats.stations);
         console.log('   - Chargers:', responseData.data.stats.chargers);
+        console.log('   - Top Users:', responseData.data.topUsers.length);
         console.log('   - Reports Trends Points:', responseData.data.reportsTrends.length);
-        console.log('   - Discussion Trends Points:', responseData.data.discussionTrends.length);
+        console.log('   - Discussion Daily Data Points:', responseData.data.discussionTrends.dailyData.length);
+        console.log('   - Discussion Monthly Data Points:', responseData.data.discussionTrends.monthlyData.length);
         console.log('   - Station Performance Points:', responseData.data.stationPerformance.length);
 
         console.log('\n📤 Step 16: Sending Response...');
