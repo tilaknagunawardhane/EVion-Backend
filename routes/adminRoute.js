@@ -6,7 +6,8 @@ const PayoutBatch = require('../models/payoutBatchModel');
 const {
     getAdminRequests,
     getRequestDetails,
-    updateRequestStatus
+    updateRequestStatus,
+    getAdminUsersTableData
 } = require('../controllers/adminController');
 
 const {
@@ -23,6 +24,7 @@ router.put('/update-request-status/:id', updateRequestStatus);
 
 router.get('/stations', getAllStationsForAdmin);
 router.get('/summary-counts', getRequestSummaryCountsRightPanel);
+router.get('/users/all', getAdminUsersTableData);
 
 // Payout routes
 const uploadPaymentProof = (req, res, next) => {
