@@ -12,10 +12,12 @@ const { notifyNewStation } = require('../middlewares/notificationMiddleware')
 const Booking2 = require('../models/bookingModel')
 const Booking = require('../models/bookingModel');
 const ChargingSession = require('../models/chargingSessionModel');
-
+const StationEarnings = require('../models/stationEarningsModel');
 const StationReport = require('../models/stationReportModel');
 const ChargerReport = require('../models/chargerReportModel');
 const BookingReport = require('../models/bookingReportModel');
+
+const StationEarning = require('../models/stationEarningsModel');
 
 const mongoose = require('mongoose');
 
@@ -1592,178 +1594,666 @@ const getStationsForMap = asyncHandler(async (req, res) => {
 
 // Admin
 // Get all stations for admin's table
+// Get all stations for admin with filtering, pagination, and search
 const getAllStationsForAdmin = asyncHandler(async (req, res) => {
-    // Note: Admin ID is used for authorization but not strictly for filtering stations (fetches all)
-    const adminId = req.query.adminId || req.user?._id; 
-    
-    // List of connector type IDs to count (You should fetch these IDs once from the DB if they are dynamic)
-    // NOTE: Replace these placeholder IDs with the actual ObjectIds for Type1, Type2, etc.
-    const CONNECTOR_ID_MAP = {
-        'Type1': '686c5b47bfe4bb27f3d50c95', 
-        'Type2': '686c596bbfe4bb27f3d50c93', 
-        'CCS1': '686c5be4bfe4bb27f3d50c96',
-        'CCS2': '686c5adcbfe4bb27f3d50c94', 
-        'CHAdeMO': '686c5d47bfe4bb27f3d50c97', 
-        'Tesla': '686c5dbbbfe4bb27f3d50c98',
-    };
-
     try {
-        // --- Aggregation Pipeline ---
-        const results = await PartneredChargingStation.aggregate([
-            // 1. Initial Lookups for Owner and District
-            {
-                $lookup: {
-                    from: 'stationowners',
-                    localField: 'station_owner_id',
-                    foreignField: '_id',
-                    as: 'ownerInfo'
-                }
-            },
-            { $unwind: { path: '$ownerInfo', preserveNullAndEmptyArrays: true } },
-            
-            // 🟢 FIX 1: District Lookup (Assuming collection name is 'districts')
-            {
-                $lookup: {
-                    from: 'districts', // CRITICAL: Ensure this collection name is correct (Mongoose usually plurals district -> districts)
-                    localField: 'district',
-                    foreignField: '_id',
-                    as: 'districtInfo'
-                }
-            },
-            { $unwind: { path: '$districtInfo', preserveNullAndEmptyArrays: true } },
+        const {
+            status,
+            electricity_provider,
+            power_source,
+            page = 1,
+            limit = 10,
+            search,
+            sort = 'createdAt'
+        } = req.query;
 
-            // 2. Lookup Sessions and Reports (for Revenue and Active Reports)
-            {
-                $lookup: {
-                    from: 'chargingsessions',
-                    localField: '_id',
-                    foreignField: 'station_id',
-                    as: 'sessions'
-                }
-            },
-            {
-                $lookup: {
-                    from: 'stationreports',
-                    localField: '_id',
-                    foreignField: 'station_id',
-                    as: 'reports'
-                }
-            },
+        const query = {};
 
-            // 3. Unwind Chargers and Connectors for Counting
-            // Deconstruct the chargers array (needed to access nested connector counts)
-            { $unwind: { path: '$chargers', preserveNullAndEmptyArrays: true } },
-            
-            // Deconstruct the connector_types array inside the chargers subdocument
-            { $unwind: { path: '$chargers.connector_types', preserveNullAndEmptyArrays: true } },
+        // Status filter
+        if (status && status !== 'all') {
+            query.station_status = status;
+        }
 
-            // 4. Group back by station (_id) and perform final calculations
-            {
-                $group: {
-                    _id: '$_id', // Group back to the station level
-                    
-                    // Base fields (use $first to pick the value once)
-                    'Station Name': { $first: '$station_name' },
-                    'Owner Name': { $first: '$ownerInfo.name' },
-                    'Joined On': { $first: '$createdAt' },
-                    'District': { $first: '$districtInfo.name' },
-                    'City': { $first: '$city' },
-                    'Address Line': { $first: '$address' },
-                    'Station Status': { $first: '$station_status' },
-                    'Unique Charger IDs': { $addToSet: '$chargers._id' },
-                    'Total Connector Count': { $sum: 1 }, // Count the total number of unwound connectors
-                    
-                    // Revenue Calculation (Sum total_cost from all sessions)
-                    'Total Revenue': {
-                        $sum: {
-                            $sum: {
-                                $map: {
-                                    input: '$sessions',
-                                    as: 'session',
-                                    in: {
-                                        $cond: [
-                                            { $eq: ['$$session.payment_status', 'completed'] },
-                                            { $ifNull: ['$$session.total_cost', 0] },
-                                            0
-                                        ]
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    
-                    // Active Reports Count (Calculate size of reports array)
-                    'No of Active Reports': { 
-                        $first: {
-                            $size: {
-                                $filter: {
-                                    input: '$reports',
-                                    as: 'report',
-                                    cond: { $eq: ['$$report.status', 'under-review'] }
-                                }
-                            }
-                        }
-                    },
-                    
-                    // 🟢 FIX 2: Count Connectors by Type ID
-                    'Type1': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Type1)] }, 1, 0] } },
-                    'Type2': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Type2)] }, 1, 0] } },
-                    'CCS1': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CCS1)] }, 1, 0] } },
-                    'CCS2': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CCS2)] }, 1, 0] } },
-                    'CHAdeMO': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.CHAdeMO)] }, 1, 0] } },
-                    'Tesla': { $sum: { $cond: [{ $eq: ['$chargers.connector_types.connector', new mongoose.Types.ObjectId(CONNECTOR_ID_MAP.Tesla)] }, 1, 0] } },
-                }
-            },
-            
-            // 5. Final Projection to clean up and match frontend table structure
-            {
-                $project: {
-                    id: '$_id',
-                    'Station Name': 1,
-                    'Owner Name': 1,
-                    'Joined On': 1,
-                    'District': 1,
-                    'City': 1,
-                    'Address Line': 1,
-                    'Revenue': '$Total Revenue',
-                    'No of Chargers': { $size: '$Unique Charger IDs' },
-                    'No of Active Reports': 1,
-                    'Station Status': 1,
-                    'Type1': 1,
-                    'Type2': 1,
-                    'CCS1': 1,
-                    'CCS2': 1,
-                    'CHAdeMO': 1,
-                    'Tesla': 1,
-                    'Total Connectors': '$Total Connector Count'
-                }
+        // Electricity provider filter
+        if (electricity_provider && electricity_provider !== 'all') {
+            query.electricity_provider = electricity_provider;
+        }
+
+        // Power source filter
+        if (power_source && power_source !== 'all') {
+            query.power_source = power_source;
+        }
+
+        // Search across multiple fields
+        if (search) {
+            query.$or = [
+                { station_name: { $regex: search, $options: 'i' } },
+                { address: { $regex: search, $options: 'i' } },
+                { city: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        // Sort configuration
+        let sortConfig = { createdAt: -1 };
+        if (sort === 'station_name') sortConfig = { station_name: 1 };
+        if (sort === 'city') sortConfig = { city: 1 };
+        if (sort === 'station_status') sortConfig = { station_status: 1 };
+
+        const stations = await PartneredChargingStation.find(query)
+            .populate('district', 'name')
+            .populate('station_owner_id', 'name email contact_number')
+            .select('station_name station_owner_id district address city electricity_provider power_source station_status chargers ratings createdAt updatedAt')
+            .sort(sortConfig)
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const totalCount = await PartneredChargingStation.countDocuments(query);
+
+        // Process stations to include charger counts and district name
+        const stationsWithChargerCount = stations.map(station => {
+            const hasChargers = station.chargers && Array.isArray(station.chargers) && station.chargers.length > 0;
+
+            let availableChargers = 0;
+            let totalChargers = 0;
+
+            if (hasChargers) {
+                availableChargers = station.chargers.filter(charger =>
+                    charger.charger_status === 'open' &&
+                    charger.connector_types &&
+                    Array.isArray(charger.connector_types) &&
+                    charger.connector_types.some(connector => connector.status === 'available')
+                ).length;
+
+                totalChargers = station.chargers.length;
             }
-        ]);
-
-        // 6. Post-process (JavaScript layer) for formatting
-        const finalData = results.map(station => {
-            const totalRevenueFormatted = `LKR ${station.Revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
             return {
                 ...station,
-                'Joined On': new Date(station['Joined On']).toLocaleDateString(),
-                'Revenue': totalRevenueFormatted,
-                'Station Status': station['Station Status'].charAt(0).toUpperCase() + station['Station Status'].slice(1),
-                'No of Chargers': station['No of Chargers'] || 0,
-                // The TypeX fields are now correct counts
+                available_chargers: availableChargers,
+                total_chargers: totalChargers,
+                district_name: station.district?.name || 'Unknown District',
+                owner_name: station.station_owner_id?.name || 'Unknown Owner'
             };
         });
 
         res.status(200).json({
             success: true,
-            data: finalData
+            data: stationsWithChargerCount,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
         });
 
     } catch (error) {
-        console.error('Error fetching stations for Admin:', error);
+        console.error('Error fetching stations for admin:', error);
         res.status(500).json({
             success: false,
-            message: 'Error fetching station list.',
+            message: 'Server error while fetching stations',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get station details for admin
+const getStationDetailsForAdmin = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        console.log('Fetching details for station ID:', stationId);
+
+        if (!stationId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID is required'
+            });
+        }
+
+        const station = await PartneredChargingStation.findById(stationId)
+            .populate('district', 'name')
+            .populate('station_owner_id', 'name email contact_number')
+            .populate({
+                path: 'chargers.connector_types.connector',
+                model: 'connector',
+                select: 'type_name current_type'
+            })
+            .lean();
+
+        if (!station) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        // Get report statistics
+        const stationReports = await StationReport.countDocuments({
+            station_id: stationId
+        });
+
+        const chargerReports = await ChargerReport.countDocuments({
+            station_id: stationId
+        });
+
+        // Get booking reports
+        const stationBookings = await Booking.find({
+            charging_station_id: stationId
+        }).select('_id');
+
+        const bookingIds = stationBookings.map(booking => booking._id);
+        const bookingReports = await BookingReport.countDocuments({
+            booking_id: { $in: bookingIds }
+        });
+
+        const totalReports = stationReports + chargerReports + bookingReports;
+
+        // Get recent bookings count (last 30 days)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const recentBookings = await Booking.countDocuments({
+            charging_station_id: stationId,
+            createdAt: { $gte: thirtyDaysAgo }
+        });
+
+        // Charger statistics
+        const chargerStats = {
+            total: station.chargers?.length || 0,
+            available: 0,
+            unavailable: 0,
+            disabled: 0,
+            byPowerType: { AC: 0, DC: 0 }
+        };
+
+        // Process chargers
+        const processedChargers = station.chargers?.map(charger => {
+            const availableConnectors = charger.connector_types?.filter(
+                connector => connector.status === 'available'
+            ).length || 0;
+
+            const totalConnectors = charger.connector_types?.length || 0;
+
+            // Update charger stats
+            if (charger.charger_status === 'open') {
+                chargerStats.available++;
+            } else if (charger.charger_status === 'unavailable') {
+                chargerStats.unavailable++;
+            } else if (charger.charger_status === 'disabled_by_SO') {
+                chargerStats.disabled++;
+            }
+
+            if (charger.power_type === 'AC') {
+                chargerStats.byPowerType.AC++;
+            } else if (charger.power_type === 'DC') {
+                chargerStats.byPowerType.DC++;
+            }
+
+            return {
+                ...charger,
+                available_connectors: availableConnectors,
+                total_connectors: totalConnectors,
+                connector_details: charger.connector_types?.map(connector => ({
+                    ...connector,
+                    connector_name: connector.connector?.type_name || 'Unknown',
+                    current_type: connector.connector?.current_type || 'Unknown'
+                })) || []
+            };
+        }) || [];
+
+        // Calculate average rating
+        const averageRating = station.ratings?.length > 0
+            ? station.ratings.reduce((sum, rating) => sum + rating.stars, 0) / station.ratings.length
+            : 0;
+
+        // Get earnings summary (last 30 days)
+        const earningsSummary = await StationEarnings.aggregate([
+            {
+                $match: {
+                    station_id: station._id,
+                    createdAt: { $gte: thirtyDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total_gross: { $sum: '$gross_amount' },
+                    total_net: { $sum: '$net_amount' },
+                    total_commission: { $sum: '$platform_commission' }
+                }
+            }
+        ]);
+
+        const response = {
+            station: {
+                ...station,
+                district_name: station.district?.name || 'Unknown District',
+                owner_name: station.station_owner_id?.name || 'Unknown Owner',
+                owner_email: station.station_owner_id?.email || '',
+                owner_contact: station.station_owner_id?.contact_number || ''
+            },
+            statistics: {
+                total_reports: totalReports,
+                station_reports: stationReports,
+                charger_reports: chargerReports,
+                booking_reports: bookingReports,
+                recent_bookings: recentBookings,
+                total_ratings: station.ratings?.length || 0,
+                average_rating: averageRating.toFixed(1),
+                charger_stats: chargerStats,
+                earnings: earningsSummary[0] || {
+                    total_gross: 0,
+                    total_net: 0,
+                    total_commission: 0
+                }
+            },
+            chargers: processedChargers
+        };
+
+        res.status(200).json({
+            success: true,
+            data: response
+        });
+
+    } catch (error) {
+        console.error('Error fetching station details for admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station details',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get station earnings for admin
+const getStationEarningsForAdmin = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const { 
+            page = 1, 
+            limit = 10, 
+            type,
+            month,
+            year 
+        } = req.query;
+
+        if (!stationId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID is required'
+            });
+        }
+
+        const query = { station_id: stationId };
+
+        // Filter by type
+        if (type && type !== 'all') {
+            query.type = type;
+        }
+
+        // Filter by month and year
+        if (month && year) {
+            query.month = parseInt(month);
+            query.year = parseInt(year);
+        }
+
+        const skip = (page - 1) * limit;
+
+        const earnings = await StationEarnings.find(query)
+            .populate('booking_id', 'booking_date start_time end_time')
+            .populate('charging_session_id', 'start_time end_time energy_delivered')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const totalCount = await StationEarnings.countDocuments(query);
+
+        // Format earnings data
+        const formattedEarnings = earnings.map(earning => ({
+            id: earning._id,
+            Type: earning.type === 'booking_fee' ? 'Booking Fee' : 'Charging Fee',
+            'Gross Amount': `Rs ${earning.gross_amount?.toLocaleString() || 0}`,
+            'Commission': `Rs ${earning.platform_commission?.toLocaleString() || 0}`,
+            'Net Amount': `Rs ${earning.net_amount?.toLocaleString() || 0}`,
+            'Status': earning.payout_status?.charAt(0).toUpperCase() + earning.payout_status?.slice(1) || 'Pending',
+            'Date': new Date(earning.createdAt).toLocaleDateString(),
+            booking_date: earning.booking_id?.booking_date ? new Date(earning.booking_id.booking_date).toLocaleDateString() : 'N/A',
+            session_energy: earning.charging_session_id?.energy_delivered || 'N/A'
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: formattedEarnings,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching station earnings for admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station earnings',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get station reports for admin
+const getStationReportsForAdmin = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const { 
+            page = 1, 
+            limit = 10,
+            type,
+            status 
+        } = req.query;
+
+        if (!stationId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID is required'
+            });
+        }
+
+        let reports = [];
+        let totalCount = 0;
+
+        // Determine which report type to fetch
+        if (!type || type === 'all') {
+            // Fetch all report types and combine
+            const [stationReports, chargerReports, bookingReportsData] = await Promise.all([
+                StationReport.find({ station_id: stationId })
+                    .populate('user_id', 'name email')
+                    .sort({ createdAt: -1 })
+                    .lean(),
+                ChargerReport.find({ station_id: stationId })
+                    .populate('user_id', 'name email')
+                    .populate('charger_id')
+                    .sort({ createdAt: -1 })
+                    .lean(),
+                (async () => {
+                    const stationBookings = await Booking.find({ charging_station_id: stationId }).select('_id');
+                    const bookingIds = stationBookings.map(booking => booking._id);
+                    return await BookingReport.find({ booking_id: { $in: bookingIds } })
+                        .populate('user_id', 'name email')
+                        .populate('booking_id')
+                        .sort({ createdAt: -1 })
+                        .lean();
+                })()
+            ]);
+
+            // Combine and format all reports
+            const allReports = [
+                ...stationReports.map(report => ({
+                    ...report,
+                    report_type: 'Station',
+                    report_id: report._id
+                })),
+                ...chargerReports.map(report => ({
+                    ...report,
+                    report_type: 'Charger',
+                    report_id: report._id
+                })),
+                ...bookingReportsData.map(report => ({
+                    ...report,
+                    report_type: 'Booking',
+                    report_id: report._id
+                }))
+            ];
+
+            // Sort by creation date and apply pagination
+            allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            const startIndex = (page - 1) * limit;
+            const endIndex = startIndex + parseInt(limit);
+            
+            reports = allReports.slice(startIndex, endIndex);
+            totalCount = allReports.length;
+
+        } else {
+            // Fetch specific report type
+            let model, query = { station_id: stationId };
+
+            if (type === 'station') {
+                model = StationReport;
+            } else if (type === 'charger') {
+                model = ChargerReport;
+            } else if (type === 'booking') {
+                const stationBookings = await Booking.find({ charging_station_id: stationId }).select('_id');
+                const bookingIds = stationBookings.map(booking => booking._id);
+                query = { booking_id: { $in: bookingIds } };
+                model = BookingReport;
+            }
+
+            if (status && status !== 'all') {
+                query.status = status;
+            }
+
+            reports = await model.find(query)
+                .populate('user_id', 'name email')
+                .populate(type === 'charger' ? 'charger_id' : '')
+                .populate(type === 'booking' ? 'booking_id' : '')
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(parseInt(limit))
+                .lean();
+
+            totalCount = await model.countDocuments(query);
+        }
+
+        // Format reports data
+        const formattedReports = reports.map(report => ({
+            id: report.report_id || report._id,
+            'Report Type': report.report_type || (report.station_id ? 'Station' : report.charger_id ? 'Charger' : 'Booking'),
+            'Reported By': report.user_id?.name || 'Unknown User',
+            'Category': report.category || 'N/A',
+            'Description': report.description || 'No description',
+            'Status': report.status?.charAt(0).toUpperCase() + report.status?.slice(1) || 'Under Review',
+            'Date Reported': new Date(report.createdAt).toLocaleDateString(),
+            'Last Update': report.resolved_at ? new Date(report.resolved_at).toLocaleDateString() : 'N/A'
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: formattedReports,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalCount / limit),
+                totalItems: totalCount,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching station reports for admin:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station reports',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Update station status (enable/disable)
+const updateStationStatus = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const { status, reason } = req.body;
+
+        if (!stationId || !status) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID and status are required'
+            });
+        }
+
+        const validStatuses = ['open', 'unavailable', 'disabled_by_SO', 'deleted'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid status value'
+            });
+        }
+
+        const updateData = { station_status: status };
+        if (reason) {
+            updateData.status_change_reason = reason;
+        }
+
+        const updatedStation = await PartneredChargingStation.findByIdAndUpdate(
+            stationId,
+            updateData,
+            { new: true, runValidators: true }
+        ).populate('station_owner_id', 'name email');
+
+        if (!updatedStation) {
+            return res.status(404).json({
+                success: false,
+                message: 'Station not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Station status updated to ${status}`,
+            data: updatedStation
+        });
+
+    } catch (error) {
+        console.error('Error updating station status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while updating station status',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get station analytics for admin dashboard
+const getStationAnalytics = asyncHandler(async (req, res) => {
+    try {
+        const { stationId } = req.params;
+        const { period = '30d' } = req.query; // 7d, 30d, 90d, 1y
+
+        if (!stationId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station ID is required'
+            });
+        }
+
+        // Calculate date range based on period
+        const now = new Date();
+        let startDate = new Date();
+
+        switch (period) {
+            case '7d':
+                startDate.setDate(now.getDate() - 7);
+                break;
+            case '30d':
+                startDate.setDate(now.getDate() - 30);
+                break;
+            case '90d':
+                startDate.setDate(now.getDate() - 90);
+                break;
+            case '1y':
+                startDate.setFullYear(now.getFullYear() - 1);
+                break;
+            default:
+                startDate.setDate(now.getDate() - 30);
+        }
+
+        // Get booking analytics
+        const bookingAnalytics = await Booking.aggregate([
+            {
+                $match: {
+                    charging_station_id: stationId,
+                    createdAt: { $gte: startDate }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' }
+                    },
+                    totalBookings: { $sum: 1 },
+                    completedBookings: {
+                        $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+                    },
+                    cancelledBookings: {
+                        $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
+                    }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+        ]);
+
+        // Get earnings analytics
+        const earningsAnalytics = await StationEarnings.aggregate([
+            {
+                $match: {
+                    station_id: stationId,
+                    createdAt: { $gte: startDate }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' }
+                    },
+                    totalRevenue: { $sum: '$gross_amount' },
+                    totalCommission: { $sum: '$platform_commission' },
+                    totalNet: { $sum: '$net_amount' },
+                    transactionCount: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+        ]);
+
+        // Get rating analytics
+        const station = await PartneredChargingStation.findById(stationId)
+            .select('ratings')
+            .lean();
+
+        const ratingDistribution = [0, 0, 0, 0, 0]; // 1-5 stars
+        station.ratings?.forEach(rating => {
+            if (rating.stars >= 1 && rating.stars <= 5) {
+                ratingDistribution[rating.stars - 1]++;
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                booking_analytics: bookingAnalytics,
+                earnings_analytics: earningsAnalytics,
+                rating_distribution: ratingDistribution,
+                period: period,
+                date_range: {
+                    start: startDate,
+                    end: now
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching station analytics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching station analytics',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -1916,5 +2406,10 @@ module.exports = {
     getStationsForMap,
 
     getAllStationsForAdmin,
-    getRequestSummaryCountsRightPanel
+    getRequestSummaryCountsRightPanel,
+    getStationDetailsForAdmin,
+    getStationEarningsForAdmin,
+    getStationReportsForAdmin,
+    updateStationStatus,
+    getStationAnalytics
 }

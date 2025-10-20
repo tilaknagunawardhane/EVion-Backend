@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
 
-const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, updateStationSchedule, getStationForEdit, 
-    getStationDetails, 
-    toggleFavoriteStation, 
-    getFavoriteStations, 
+const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, updateStationSchedule, getStationForEdit,
+    getStationDetails,
+    toggleFavoriteStation,
+    getFavoriteStations,
     getOwnerStations,
     getStationById, getStationChargers, updateCharger,
     addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer,
-    getStationsForMap
- } = require('../controllers/partneredChargingStationController');
+    getStationsForMap,
+    
+} = require('../controllers/partneredChargingStationController');
 
 const { getTemporaryClosures, createTemporaryClosure, cancelTemporaryClosure } = require('../controllers/tempClosureController');
 

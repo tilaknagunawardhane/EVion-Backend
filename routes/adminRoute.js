@@ -12,7 +12,12 @@ const {
 
 const {
     getAllStationsForAdmin,
-    getRequestSummaryCountsRightPanel
+    getRequestSummaryCountsRightPanel,
+    getStationDetailsForAdmin,
+    getStationEarningsForAdmin,
+    getStationReportsForAdmin,
+    updateStationStatus,
+    getStationAnalytics
 } = require('../controllers/partneredChargingStationController');
 
 const { adminLogin } = require('../controllers/authController');
@@ -25,6 +30,12 @@ router.put('/update-request-status/:id', updateRequestStatus);
 router.get('/stations', getAllStationsForAdmin);
 router.get('/summary-counts', getRequestSummaryCountsRightPanel);
 router.get('/users/all', getAdminUsersTableData);
+
+router.get('/stations/:stationId', getStationDetailsForAdmin);
+router.get('/stations/:stationId/earnings', getStationEarningsForAdmin);
+router.get('/stations/:stationId/reports', getStationReportsForAdmin);
+router.put('/stations/:stationId/status', updateStationStatus);
+router.get('/stations/:stationId/analytics', getStationAnalytics);
 
 // Payout routes
 const uploadPaymentProof = (req, res, next) => {
