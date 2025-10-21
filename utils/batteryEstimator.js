@@ -72,7 +72,7 @@ async function estimateBatteryConsumption(evOwnerId, vehicleId, initialBatteryLe
     };
 }
 
-async function estimateMaxDistance(evOwnerId, vehicleId, initialBatteryLevelPercent = 80, passengerCount = 1, additionalWeightKg = 0) {
+async function estimateMaxDistance(evOwnerId, vehicleId, initialBatteryLevelPercent = 50, passengerCount = 1, additionalWeightKg = 0) {
     console.log('evOwnerId: ', evOwnerId);
     console.log('vehicleId: ', vehicleId);
     console.log('initialBatteryLevelPercent: ', initialBatteryLevelPercent);
@@ -98,7 +98,7 @@ async function estimateMaxDistance(evOwnerId, vehicleId, initialBatteryLevelPerc
     
     console.log('vehicle: ', vehicle);
     const efficiency = vehicle.efficiency ?? 0.2;
-    const batteryCapacityKWh = vehicle.battery_capacity;
+    const batteryCapacityKWh = vehicle.battery_capacity ?? 50;
     const vehicleWeightKg = vehicle.vehicleWeightKg ?? 1500;
 
     if(!vehicle || !Number.isFinite(efficiency) || !Number.isFinite(batteryCapacityKWh) || !Number.isFinite(vehicleWeightKg) || efficiency <= 0 || batteryCapacityKWh <= 0 || vehicleWeightKg <= 0) {
