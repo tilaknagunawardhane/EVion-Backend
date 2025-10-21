@@ -2,16 +2,60 @@ require('dotenv').config();
 
 const API_KEY = process.env.OPEN_CHARGE_MAP_API_KEY;
 const PartneredChargingStation = require('../models/partneredChargingStationModel.js');
-const estimateBatteryConsumption = require('./batteryEstimator.js');
+const { estimateBatteryConsumption, estimateMaxDistance } = require('./batteryEstimator.js');
+const decodePolyline = require('./decodePolyline.js');
+const calculateDistance = require('./calculateDistance.js');
+const getDistancesToStations = require('./getDistancesToStations.js');
 
 // Fetch API in Node.js (Node 18+ has built-in fetch)
 async function filteredChargingStations(req, res) {
     console.log('reached to station filter');
     console.log('Request body:', req.body);
 
-    const polyline = req.body.polyline;
-    const distance = 2; // km buffer around polyline
+    const { user,
+        vehicleId,
+        routeDistanceInKm,
+        tripData,
+        polyline,
+        source } = req.body;
+        
+    if (!user || !user._id) {
+        const errorMsg = 'User data is required - User object with _id is missing from request body';
+        console.error('ERROR:', errorMsg);
+        return res.status(400).json({ 
+            error: 'User data is required',
+            message: errorMsg
+        });
+    }
+
+    const maxDistanceRelatedData = await estimateMaxDistance(
+        user._id, 
+        vehicleId ?? null, 
+        tripData?.batteryLevel != null ? Number(tripData.batteryLevel) : 50,
+        tripData?.passengers != null ? Number(tripData.passengers) : 1,
+        tripData?.additionalWeightKg != null ? Number(tripData.additionalWeightKg) : 0
+        ); // km buffer around polyline
+    
+    const distance = maxDistanceRelatedData.maxDistanceKm;
+    const maxDistanceKm = maxDistanceRelatedData.maxDistanceKm;
     const distanceunit = 'km';
+    console.log('distance unit: ', distance, distanceunit);
+    
+    // if the distance is short
+    if( distance > routeDistanceInKm ){
+        const surplusRange = distance - routeDistanceInKm;
+        console.log('No need to charge the vehicle');
+        return res.status(200).json({
+            stations: [], // Empty array of stations
+            meta: {
+                needsCharging: false,
+                message: 'You can reach the destination without charging your EV',
+                routeDistance: routeDistanceInKm,
+                vehicleRange: distance,
+                surplusRange: surplusRange.toFixed(2)
+            }
+        });
+    }
 
     const baseUrl = 'https://api.openchargemap.io/v3/poi';
 
@@ -86,57 +130,75 @@ async function filteredChargingStations(req, res) {
         }));
 
         // Combine both arrays
-        const allStations = [...openChargeStations, ...formattedPartneredStations];
+        let allStations = [...openChargeStations, ...formattedPartneredStations];
         
-        console.log('Total stations:', allStations.length);
-        console.log('OpenCharge stations:', openChargeStations.length);
-        console.log('Partnered stations:', formattedPartneredStations.length);
+        console.log('Total stations before filtering:', allStations.length);
+        console.log('OpenCharge stations before filtering:', openChargeStations.length);
+        console.log('Partnered stations before filtering:', formattedPartneredStations.length);
 
-        res.status(200).json(allStations);
-        return allStations;
+        // ✅ GET ACTUAL DRIVING DISTANCES USING GOOGLE MAPS
+        const startLat = source?.latitude;
+        const startLng = source?.longitude;
+
+        if (!startLat || !startLng) {
+            return res.status(400).json({
+                error: 'Source location is required',
+                message: 'Please provide source latitude and longitude'
+            });
+        }
+
+        console.log('Calculating distances from start to all stations...');
+        const stationsWithDistances = await getDistancesToStations(
+            startLat, 
+            startLng, 
+            allStations,
+            process.env.GOOGLE_MAPS_API_KEY
+        );
+
+        // ✅ FILTER REACHABLE STATIONS
+        // Apply 90% safety margin (leave 10% buffer for emergencies)
+        const safetyMargin = 0.9;
+        const maxReachableDistance = maxDistanceKm * safetyMargin;
+
+        const reachableStations = stationsWithDistances
+            .filter(item => item.distanceKm <= maxReachableDistance)
+            .map(item => ({
+                ...item.station,
+                distanceFromStart: item.distanceKm.toFixed(2),
+                distanceText: item.distanceText,
+                durationText: item.durationText,
+                isReachable: true
+            }))
+            .sort((a, b) => parseFloat(a.distanceFromStart) - parseFloat(b.distanceFromStart));
+
+        console.log('Reachable stations:', reachableStations.length);
+        console.log('Filtered out (unreachable):', allStations.length - reachableStations.length);
+
+        return res.status(200).json({
+            stations: reachableStations,
+            meta: {
+                needsCharging: true,
+                count: reachableStations.length,
+                totalFound: allStations.length,
+                filtered: allStations.length - reachableStations.length,
+                maxRange: maxDistanceKm,
+                maxReachableDistance: maxReachableDistance.toFixed(2),
+                safetyMargin: '90%'
+            }
+        });
 
     } catch (error) {
-         console.error('Error fetching charging stations:', error);
-        res.status(500).json({ error: 'Failed to fetch charging stations' });
-        return [];
+    console.error('Error fetching charging stations:', error);
+    res.status(500).json({ 
+        error: 'Failed to fetch charging stations',
+        message: error.message,
+        details: error.toString()
+    });
+    return [];
     }
 }
 
 
-
-// Function to decode Google polyline
-function decodePolyline(encoded) {
-    const points = [];
-    let index = 0, len = encoded.length;
-    let lat = 0, lng = 0;
-
-    while (index < len) {
-        let b, shift = 0, result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lat += dlat;
-
-        shift = 0;
-        result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lng += dlng;
-
-        points.push({
-            latitude: lat / 1e5,
-            longitude: lng / 1e5
-        });
-    }
-    return points;
-}
 
 async function getPartneredStationsNearRoute(routeCoordinates, maxDistance) {
     // Get all stations
@@ -170,24 +232,6 @@ async function getPartneredStationsNearRoute(routeCoordinates, maxDistance) {
     // Fetch unique stations
     const stationIds = Array.from(stationsNearRoute);
     return await PartneredChargingStation.find({ _id: { $in: stationIds } });
-}
-
-// Haversine formula
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-function toRad(degrees) {
-    return degrees * (Math.PI / 180);
 }
 
 
