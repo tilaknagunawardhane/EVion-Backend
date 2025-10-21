@@ -1,17 +1,20 @@
 const express = require('express');
 const router = express.Router();
 
-const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, updateStationSchedule, getStationForEdit, 
-    getStationDetails, 
-    toggleFavoriteStation, 
-    getFavoriteStations, 
+const { checkStationsExist, createStation, getRequestedStations, deleteStation, updateStation, updateStationSchedule, getStationForEdit,
+    getStationDetails,
+    toggleFavoriteStation,
+    getFavoriteStations,
     getOwnerStations,
     getStationById, getStationChargers, updateCharger,
     addChargerToStation,
     getAllStationsForSupportOfficer,
     getStationDetailsForSupportOfficer,
-    getStationsForMap
- } = require('../controllers/partneredChargingStationController');
+    getStationsForMap,
+    getAllStationsForAdminDash,
+    getOwnerStationsForMap
+    
+} = require('../controllers/partneredChargingStationController');
 
 const { getTemporaryClosures, createTemporaryClosure, cancelTemporaryClosure } = require('../controllers/tempClosureController');
 
@@ -40,5 +43,7 @@ router.get('/map/stations', getStationsForMap);
 router.get('/:stationId/temporary-closure', getTemporaryClosures);
 router.post('/:stationId/create-temporary-closure', createTemporaryClosure);
 router.put('/:stationId/remove-temporary-closure/:closureId', cancelTemporaryClosure);
+router.get('/all-stations', getAllStationsForAdminDash);
+router.get('/owner-stations', getOwnerStationsForMap);
 
 module.exports = router;
