@@ -2432,6 +2432,67 @@ const getAllStationsForAdminDash = asyncHandler(async (req, res) => {
     }
 });
 
+// Get stations for station owner dashboard map
+const getOwnerStationsForMap = asyncHandler(async (req, res) => {
+    try {
+        const { stationOwnerId } = req.query;
+
+        if (!stationOwnerId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Station owner ID is required'
+            });
+        }
+
+        // Fetch stations with basic info for map display
+        const stations = await PartneredChargingStation.find({
+            station_owner_id: stationOwnerId
+        })
+        .populate('district', 'name')
+        .select('station_name address city district location station_status chargers')
+        .lean();
+
+        const formattedStations = stations.map(station => {
+            // Calculate display status
+            const isNewStation = station.chargers.every(c =>
+                ['processing', 'to_be_installed', 'rejected'].includes(c.charger_status)
+            );
+            
+            let displayStatus = station.station_status;
+            if (isNewStation && station.station_status === 'unavailable') {
+                displayStatus = 'reviewing';
+            } else if (!isNewStation && station.station_status === 'unavailable') {
+                displayStatus = 'closed';
+            }
+
+            return {
+                _id: station._id.toString(),
+                id: station._id.toString(),
+                station_name: station.station_name,
+                name: station.station_name,
+                address: station.address || '',
+                city: station.city || '',
+                district: station.district?.name || '',
+                location: station.location || {},
+                status: displayStatus.toLowerCase(),
+                chargers: station.chargers || []
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: formattedStations
+        });
+    } catch (error) {
+        console.error('Error fetching owner stations for map:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching stations data',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 module.exports = {
     checkStationsExist,
     createStation,
@@ -2459,5 +2520,6 @@ module.exports = {
     getStationReportsForAdmin,
     updateStationStatus,
     getStationAnalytics,
-    getAllStationsForAdminDash
+    getAllStationsForAdminDash,
+    getOwnerStationsForMap
 }
