@@ -1,6 +1,7 @@
 const { get } = require("mongoose");
 
 async function getDistancesToStations(startLat, startLng, stations, GOOGLE_MAPS_API_KEY) {
+    console.log('inside getDistancesToStations...');
     if (!stations || stations.length === 0) {
         return [];
     }
